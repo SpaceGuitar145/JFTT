@@ -8,7 +8,7 @@ bool keep_docs = false;
 
 %option noyywrap
 
-%x SINGLE_LINE_COMMENT MULTI_LINE_COMMENT STRING ARROW
+%x SINGLE_LINE_COMMENT MULTI_LINE_COMMENT STRING ARROW SINGLE_LINE_COMMENT_KEEP_DOCS MULTI_LINE_COMMENT_KEEP_DOCS
 
 %%
 
@@ -21,10 +21,42 @@ bool keep_docs = false;
 ^[ \t]*\/\*                     BEGIN(MULTI_LINE_COMMENT);
 \/\*\*\/                        printf(" ");
 ^[ \t]*\/\*\*\/                 printf(" "); 
-\/\/\!|\/\/\/                   !keep_docs ? BEGIN(SINGLE_LINE_COMMENT) : printf("%s", yytext);
-^[ \t]*\/\/\!|\/\/\/            !keep_docs ? BEGIN(SINGLE_LINE_COMMENT) : printf("%s", yytext);
-\/\*\!|\/\*\*                   !keep_docs ? BEGIN(MULTI_LINE_COMMENT) : printf("%s", yytext);
-^[ \t]*\/\*\!|\/\*\*            !keep_docs ? BEGIN(MULTI_LINE_COMMENT) : printf("%s", yytext);
+\/\/\!|\/\/\/                   {
+                                    if (keep_docs) {
+                                        printf("%s", yytext); 
+                                        BEGIN(SINGLE_LINE_COMMENT_KEEP_DOCS);
+                                    }
+                                    else {
+                                        BEGIN(SINGLE_LINE_COMMENT);
+                                    }
+                                }
+^[ \t]*\/\/\!|\/\/\/            {
+                                    if (keep_docs) {
+                                        printf("%s", yytext); 
+                                        BEGIN(SINGLE_LINE_COMMENT_KEEP_DOCS);
+                                    }
+                                    else {
+                                        BEGIN(SINGLE_LINE_COMMENT);
+                                    }
+                                }
+\/\*\!|\/\*\*                   {
+                                    if (keep_docs) {
+                                        printf("%s", yytext); 
+                                        BEGIN(MULTI_LINE_COMMENT_KEEP_DOCS);
+                                    }
+                                    else {
+                                        BEGIN(MULTI_LINE_COMMENT_KEEP_DOCS);
+                                    }
+                                }
+^[ \t]*\/\*\!|\/\*\*            {
+                                    if (keep_docs) {
+                                        printf("%s", yytext); 
+                                        BEGIN(MULTI_LINE_COMMENT_KEEP_DOCS);
+                                    }
+                                    else {
+                                        BEGIN(MULTI_LINE_COMMENT_KEEP_DOCS);
+                                    }
+                                }
 
 <STRING>{
     \"                          BEGIN(INITIAL); printf("%s", yytext);
@@ -45,6 +77,18 @@ bool keep_docs = false;
 <MULTI_LINE_COMMENT>{
     \*\/                        BEGIN(INITIAL);
     .|\n                        ;
+}
+
+<SINGLE_LINE_COMMENT_KEEP_DOCS>{
+    \\[^\n]*\n                  printf("%s", yytext);
+    \n                          printf("\n"); BEGIN(INITIAL);
+    .                           printf("%s", yytext); 
+}
+
+<MULTI_LINE_COMMENT_KEEP_DOCS>{
+    \*\/                        BEGIN(INITIAL); printf("%s", yytext);
+    \n                          printf("\n"); BEGIN(INITIAL);
+    .                           printf("%s", yytext);
 }
 
 .|\n                            printf("%s", yytext);
