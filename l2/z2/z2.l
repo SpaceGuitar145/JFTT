@@ -10,7 +10,7 @@
 %%
 
 \"                  BEGIN(STRING); printf("%s", yytext);
---.*$               ;
+\-\-.*$               ;
 .|\n                printf("%s", yytext);
 <STRING>{
     \"\"            printf("%s", yytext);

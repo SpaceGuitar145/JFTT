@@ -45,7 +45,7 @@ bool keep_docs = false;
                                         BEGIN(MULTI_LINE_COMMENT_KEEP_DOCS);
                                     }
                                     else {
-                                        BEGIN(MULTI_LINE_COMMENT_KEEP_DOCS);
+                                        BEGIN(MULTI_LINE_COMMENT);
                                     }
                                 }
 ^[ \t]*\/\*\!|\/\*\*            {
@@ -54,7 +54,7 @@ bool keep_docs = false;
                                         BEGIN(MULTI_LINE_COMMENT_KEEP_DOCS);
                                     }
                                     else {
-                                        BEGIN(MULTI_LINE_COMMENT_KEEP_DOCS);
+                                        BEGIN(MULTI_LINE_COMMENT);
                                     }
                                 }
 
@@ -69,7 +69,7 @@ bool keep_docs = false;
 }
 
 <SINGLE_LINE_COMMENT>{
-    \\[^\n]*\n                  ;
+    \\\n                  ;
     \n                          BEGIN(INITIAL);
     .                           ;
 }
@@ -80,7 +80,7 @@ bool keep_docs = false;
 }
 
 <SINGLE_LINE_COMMENT_KEEP_DOCS>{
-    \\[^\n]*\n                  printf("%s", yytext);
+    \\\n                  printf("%s", yytext);
     \n                          printf("\n"); BEGIN(INITIAL);
     .                           printf("%s", yytext); 
 }
