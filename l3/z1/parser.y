@@ -71,7 +71,7 @@ int modular_div(int a, int b) {
 %%
 
 program:
-    program expr '\n' { printf("Result: %d\n", $2); }
+    program expr '\n' { printf("Wynik: %d\n", $2); }
   | program '\n'
   | 
   ;
@@ -84,7 +84,7 @@ expr:
         if ($3 != 0) 
             $$ = modular_div($1, $3); 
         else {
-            printf("Błąd: dzielenie przez 0\n");
+            printf("Błąd: dzielenie przez zero\n");
             $$ = 0;
         }
     }
@@ -101,5 +101,5 @@ int main(void) {
 }
 
 void yyerror(const char *s) {
-    fprintf(stderr, "Error: %s\n", s);
+    fprintf(stderr, "Błąd: %s\n", s);
 }

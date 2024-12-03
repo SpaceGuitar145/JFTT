@@ -20,7 +20,7 @@ DIGIT      [0-9]+
 ")"                 return ')';
 \n                  return '\n';
 [ \t\n]             ;
-.                   fprintf(stderr, "Unknown character: %s\n", yytext);
+.                   fprintf(stderr, "Błąd: zły symbol %s\n", yytext);
 
 <COMMENT>{
     \\\n            ;
