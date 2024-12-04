@@ -6,11 +6,11 @@
 %option noyywrap noinput nounput
 %x COMMENT
 
-DIGIT      [0-9]+
+NUMBER      [0-9]+
 
 %%
 \#                  BEGIN(COMMENT);
-{DIGIT}             yylval.num = atoi(yytext); return NUMBER;
+{NUMBER}            yylval.num = atoi(yytext); return NUMBER;
 "+"                 return '+';
 "-"                 return '-';
 "*"                 return '*';
