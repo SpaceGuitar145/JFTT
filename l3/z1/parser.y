@@ -11,7 +11,7 @@ int mod(int x) {
     return ((x % MODULO) + MODULO) % MODULO;
 }
 
-int modular_multiply(int a, int b) {
+int mod_multiply(int a, int b) {
     int result = 0;
     a = mod(a);
     while (b > 0) {
@@ -24,15 +24,15 @@ int modular_multiply(int a, int b) {
     return result;
 }
 
-int modular_pow(int base, int exponent) {
+int mod_pow(int base, int exponent) {
     int result = 1;
     while (exponent--) {
-        result = modular_multiply(result, base);
+        result = mod_multiply(result, base);
     }
     return result;
 }
 
-int mod_inverse(int b, int m) {
+int mult_inverse(int b, int m) {
     int x0 = 1, x1 = 0, m0 = m, t, q;
     while (b > 1) {
         q = b / m;
@@ -48,9 +48,9 @@ int mod_inverse(int b, int m) {
     return x0;
 }
 
-int modular_div(int a, int b) {
-    int b_inv = mod_inverse(b, MODULO);
-    return modular_multiply(a, b_inv);
+int mod_div(int a, int b) {
+    int b_inv = mult_inverse(b, MODULO);
+    return mod_multiply(a, b_inv);
 }
 
 %}
@@ -79,16 +79,16 @@ program:
 expr:
     expr '+' expr { $$ = mod($1 + $3); }
   | expr '-' expr { $$ = mod($1 - $3); }
-  | expr '*' expr { $$ = modular_multiply($1, $3); }
+  | expr '*' expr { $$ = mod_multiply($1, $3); }
   | expr '/' expr { 
         if ($3 != 0) 
-            $$ = modular_div($1, $3); 
+            $$ = mod_div($1, $3); 
         else {
             printf("Błąd: dzielenie przez zero\n");
             $$ = 0;
         }
     }
-  | expr '^' expr { $$ = modular_pow($1, $3); }
+  | expr '^' expr { $$ = mod_pow($1, $3); }
   | '-' expr %prec UMINUS { $$ = mod(-$2); }
   | '(' expr ')' { $$ = $2; }
   | NUMBER { $$ = mod($1); }

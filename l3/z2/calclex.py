@@ -8,7 +8,7 @@ def mod(x):
     return ((x % MODULO) + MODULO) % MODULO
 
 
-def modular_multiply(a, b):
+def mod_multiply(a, b):
     result = 0
     a = mod(a)
     while b > 0:
@@ -19,17 +19,17 @@ def modular_multiply(a, b):
     return result
 
 
-def modular_pow(base, exponent):
+def mod_pow(base, exponent):
     result = 1
     while exponent > 0:
         if exponent % 2 == 1:
-            result = modular_multiply(result, base)
-        base = modular_multiply(base, base)
+            result = mod_multiply(result, base)
+        base = mod_multiply(base, base)
         exponent //= 2
     return result
 
 
-def mod_inverse(b, m):
+def mult_inverse(b, m):
     x0, x1, m0 = 1, 0, m
     while b > 1:
         q = b // m
@@ -40,9 +40,9 @@ def mod_inverse(b, m):
     return x0
 
 
-def modular_div(a, b):
-    b_inv = mod_inverse(b, MODULO)
-    return modular_multiply(a, b_inv)
+def mod_div(a, b):
+    b_inv = mult_inverse(b, MODULO)
+    return mod_multiply(a, b_inv)
 
 class CalcLexer(Lexer):
     tokens = { NUMBER }
@@ -106,18 +106,18 @@ class CalcParser(Parser):
 
     @_('expr "*" expr')
     def expr(self, p):
-        return modular_multiply(p.expr0, p.expr1)
+        return mod_multiply(p.expr0, p.expr1)
 
     @_('expr "/" expr')
     def expr(self, p):
         if p.expr1 == 0:
             print("Błąd: dzielienie przez zero")
             return None
-        return modular_div(p.expr0, p.expr1)
+        return mod_div(p.expr0, p.expr1)
 
     @_('expr "^" expr')
     def expr(self, p):
-        return modular_pow(p.expr0, p.expr1)
+        return mod_pow(p.expr0, p.expr1)
 
     @_('"-" expr %prec UMINUS')
     def expr(self, p):
