@@ -1,0 +1,7 @@
+venv/
+compilator/
+
+*.yy.c
+*.tab.c
+*.tab.h
+translator
