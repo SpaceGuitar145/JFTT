@@ -1,5 +1,4 @@
 venv/
-compilator/
 
 *.yy.c
 *.tab.c
