@@ -1,28 +1,31 @@
-CC = gcc
+CXX = g++
 FLEX = flex
 BISON = bison
+CXXFLAGS = -std=c++17 -Wall -Wextra
 
-LEXER_SRC = lexer.l
-PARSER_SRC = parser.y
+LEXER = lexer.l
+PARSER = parser.y
+EXECUTABLE = parser
 
-LEXER_OBJ = lex.yy.c
-PARSER_OBJ = parser.tab.c
-PARSER_HEADER = parser.tab.h
+all: $(EXECUTABLE)
 
-OUTPUT_EXEC = kompilator
+$(EXECUTABLE): parser.tab.o lex.yy.o main.o
+	$(CXX) $(CXXFLAGS) -o $@ $^
 
-all: $(OUTPUT_EXEC)
+parser.tab.o: parser.tab.c
+	$(CXX) $(CXXFLAGS) -c $<
 
-$(PARSER_OBJ) $(PARSER_HEADER): $(PARSER_SRC)
-	$(BISON) -d -o $(PARSER_OBJ) $(PARSER_SRC)
+lex.yy.o: lex.yy.c
+	$(CXX) $(CXXFLAGS) -c $<
 
-$(LEXER_OBJ): $(LEXER_SRC) $(PARSER_HEADER)
-	$(FLEX) -o $(LEXER_OBJ) $(LEXER_SRC)
+main.o: main.cpp
+	$(CXX) $(CXXFLAGS) -c $<
 
-$(OUTPUT_EXEC): $(PARSER_OBJ) $(LEXER_OBJ)
-	$(CC) -o $(OUTPUT_EXEC) $(PARSER_OBJ) $(LEXER_OBJ)
+parser.tab.c parser.tab.h: $(PARSER)
+	$(BISON) -d $<
+
+lex.yy.c: $(LEXER) parser.tab.h
+	$(FLEX) $<
 
 clean:
-	rm -f $(PARSER_OBJ) $(PARSER_HEADER) $(LEXER_OBJ) $(OUTPUT_EXEC)
-
-.PHONY: all clean
+	rm -f parser parser.tab.* lex.yy.* *.o

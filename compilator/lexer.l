@@ -1,8 +1,7 @@
 %{
+#include <iostream>
+#include <string>
 #include "parser.tab.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 %}
 
 %option noyywrap noinput nounput
@@ -12,7 +11,13 @@
 %%
 
 \#                          BEGIN(COMMENT);
+PROGRAM                     return PROGRAM;
 PROCEDURE                   return PROCEDURE;
+IS                          return IS;
+BEGIN                       return PROGRAM_BEGIN;
+END                         return END;
+T                           return T;
+":="                        return ASSIGN;
 IF                          return IF;
 THEN                        return THEN;
 ELSE                        return ELSE;
@@ -27,34 +32,28 @@ FROM                        return FROM;
 TO                          return TO;
 DOWNTO                      return DOWNTO;
 ENDFOR                      return ENDFOR;
-IS                          return IS;
-BEGIN                       return PROGRAM_BEGIN;
-END                         return END;
-PROGRAM                     return PROGRAM;
-READ                        return READ;
 WRITE                       return WRITE;
-T                           return T;
-\;                          return SEMICOLON;
-\,                          return COMMA;
-":="                        return ASSIGN;
-\=                          return EQUAL;
-"!="                        return NEQUAL;
-\>                          return GREATER;
-\<                          return LESS;
-">="                        return GEQUAL;
-"<="                        return LEQUAL;
-\+                          return ADD;
-\-                          return SUB;
-\*                          return MUL;
-\/                          return DIV;
-\%                          return MOD;
-\(                          return LPAREN;
-\)                          return RPAREN;
-\[                          return LBRACKET;
-\]                          return RBRACKET;
-\:                          return COLON;
-[_a-z]+                     yylval.sval = strdup(yytext); return IDENTIFIER;
-[0-9]+                      yylval.ival = atoi(yytext); return NUM;
+READ                        return READ;
+\+                          return '+';
+\-                          return '-';
+\*                          return '*';
+\/                          return '/';
+\%                          return '%';
+\=                          return '=';
+"!="                        return NEQ;
+\>                          return '<';
+\<                          return '>';
+">="                        return GEQ;
+"<="                        return LEQ;
+\[                          return '[';
+\]                          return ']';
+\(                          return '(';
+\)                          return ')';
+\:                          return ':';
+\,                          return ',';
+\;                          return ';';
+[_a-z]+                     { std::cout << "Matched token: pidentifier (" << yytext << ")\n"; yylval.strval = new std::string(yytext); return pidentifier; }
+[0-9]+                      yylval.num = std::stoll(yytext); return num;
 [ \t\r\n]+                  ;
 
 <COMMENT>{
