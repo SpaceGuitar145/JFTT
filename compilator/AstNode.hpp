@@ -35,27 +35,28 @@ public:
 
 class IdentifierNode : public ExpressionNode {
 public:
-    std::string name;
+    std::string* name;
     ExpressionNode* index = nullptr;
     long long start = 0, end = 0;
     bool isArrayRange = false;
 
-    explicit IdentifierNode(const std::string& varName)
+    explicit IdentifierNode(std::string* varName)
         : name(varName) {}
 
-    IdentifierNode(const std::string& varName, ExpressionNode* idx)
+    IdentifierNode(std::string* varName, ExpressionNode* idx)
         : name(varName), index(idx), isArrayRange(false) {}
 
-    IdentifierNode(const std::string& varName, long long startIdx, long long endIdx)
+    IdentifierNode(std::string* varName, long long startIdx, long long endIdx)
         : name(varName), index(nullptr), start(startIdx), end(endIdx), isArrayRange(true) {}
 
     ~IdentifierNode() {
+        delete name;
         delete index;
     }
 
     void print(int indent = 0) const override {
         printIndent(indent);
-        std::cout << "Identifier: " << name;
+        std::cout << "Identifier: " << *name;
         if (isArrayRange) {
             std::cout << " [" << start << ":" << end << "]";
         } else if (index) {
@@ -69,18 +70,22 @@ public:
 
 class ArgumentNode : public AstNode {
 public:
-    std::string argumentName;
+    std::string* argumentName;
     bool isArray = false;
 
-    explicit ArgumentNode(const std::string& varName)
+    ~ArgumentNode() {
+        delete argumentName;
+    }
+
+    explicit ArgumentNode(std::string* varName)
         : argumentName(varName) {}
 
-    ArgumentNode(const std::string& varName, bool isArr)
+    ArgumentNode(std::string* varName, bool isArr)
         : argumentName(varName), isArray(isArr) {}
 
     void print(int indent = 0) const override {
         printIndent(indent);
-        std::cout << "Argument: " << argumentName;
+        std::cout << "Argument: " << *argumentName;
         if (isArray) {
             std::cout << " T";
         }
@@ -98,11 +103,11 @@ public:
         }
     }
 
-    void addVariableArgument(const std::string& pidentifier) {
+    void addVariableArgument(std::string* pidentifier) {
         args.push_back(new ArgumentNode(pidentifier));
     }
 
-    void addArrayArgument(const std::string& pidentifier) {
+    void addArrayArgument(std::string* pidentifier) {
         args.push_back(new ArgumentNode(pidentifier, true));
     }
 
@@ -117,19 +122,20 @@ public:
 
 class ProcedureHeadNode : public AstNode {
 public:
-    std::string procedureName;
+    std::string* procedureName;
     ArgumentsDeclarationNode* argumentsDeclaration;
 
     ~ProcedureHeadNode() {
+        delete procedureName;
         delete argumentsDeclaration;
     }
 
-    explicit ProcedureHeadNode(const std::string& pidentifier, ArgumentsDeclarationNode* argsDecl)
+    explicit ProcedureHeadNode(std::string* pidentifier, ArgumentsDeclarationNode* argsDecl)
         : procedureName(pidentifier), argumentsDeclaration(argsDecl) {}
 
     void print(int indent = 0) const override {
         printIndent(indent);
-        std::cout << "Procedure Head: " << procedureName << std::endl;
+        std::cout << "Procedure Head: " << *procedureName << std::endl;
 
         if (argumentsDeclaration) {
             printIndent(indent + 2);
@@ -149,7 +155,7 @@ public:
         }
     }
 
-    void addArgument(const std::string& pidentifier) {
+    void addArgument(std::string* pidentifier) {
         arguments.push_back(new IdentifierNode(pidentifier));
     }
 
@@ -233,11 +239,11 @@ public:
         }
     }
 
-    void addVariableDeclaration(const std::string& name) {
+    void addVariableDeclaration(std::string* name) {
         variables.push_back(new IdentifierNode(name));
     }
 
-    void addArrayDeclaration(const std::string& name, long long start, long long end) {
+    void addArrayDeclaration(std::string* name, long long start, long long end) {
         variables.push_back(new IdentifierNode(name, start, end));
     }
 
@@ -417,7 +423,7 @@ public:
     ExpressionNode* toValue;
     CommandsNode* commands;
 
-    ForToNode(const std::string& pid, ExpressionNode* fromVal, ExpressionNode* toVal, CommandsNode* comms)
+    ForToNode(std::string* pid, ExpressionNode* fromVal, ExpressionNode* toVal, CommandsNode* comms)
         : pidentifier(new IdentifierNode(pid)), fromValue(fromVal), toValue(toVal), commands(comms) {}
 
     ~ForToNode() {
@@ -464,7 +470,7 @@ public:
     ExpressionNode* toValue;
     CommandsNode* commands;
 
-    ForDownToNode(const std::string& pid, ExpressionNode* fromVal, ExpressionNode* toVal, CommandsNode* comms)
+    ForDownToNode(std::string* pid, ExpressionNode* fromVal, ExpressionNode* toVal, CommandsNode* comms)
         : pidentifier(new IdentifierNode(pid)), fromValue(fromVal), toValue(toVal), commands(comms) {}
 
     ~ForDownToNode() {
@@ -506,19 +512,20 @@ public:
 
 class ProcedureCallNode : public CommandNode {
 public:
-    std::string procedureName;
+    std::string* procedureName;
     ProcedureCallArguments* arguments;
 
     ~ProcedureCallNode() {
+        delete procedureName;
         delete arguments;
     }
 
-    explicit ProcedureCallNode(const std::string& pidentifier, ProcedureCallArguments* args)
+    explicit ProcedureCallNode(std::string* pidentifier, ProcedureCallArguments* args)
         : procedureName(pidentifier), arguments(args) {}
 
     void print(int indent = 0) const override {
         printIndent(indent);
-        std::cout << "Procedure Call: " << procedureName << std::endl;
+        std::cout << "Procedure Call: " << *procedureName << std::endl;
 
         if (arguments) {
             printIndent(indent + 2);

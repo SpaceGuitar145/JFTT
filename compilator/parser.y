@@ -145,11 +145,11 @@ command:
     }
     | FOR pidentifier FROM value TO value DO commands ENDFOR 
     {
-        $$ = new ForToNode(*$2, $4, $6, $8);
+        $$ = new ForToNode($2, $4, $6, $8);
     }
     | FOR pidentifier FROM value DOWNTO value DO commands ENDFOR
     {
-        $$ = new ForDownToNode(*$2, $4, $6, $8);
+        $$ = new ForDownToNode($2, $4, $6, $8);
     }
     | proc_call ';'
     {
@@ -168,85 +168,73 @@ command:
 proc_head:
     pidentifier '(' args_decl ')'
     {
-        $$ = new ProcedureHeadNode(*$1, $3);
-        delete $1;
+        $$ = new ProcedureHeadNode($1, $3);
     }
 ;
 
 proc_call:
     pidentifier '(' args ')'
     {
-        $$ = new ProcedureCallNode(*$1, $3);
-        delete $1;
+        $$ = new ProcedureCallNode($1, $3);
     }
 ;
 
 declarations:
     declarations ',' pidentifier 
     {
-        $1->addVariableDeclaration(*$3);
-        delete $3;
+        $1->addVariableDeclaration($3);
         $$ = $1;
     }
     | declarations ',' pidentifier '[' num ':' num ']' 
     {
-        $1->addArrayDeclaration(*$3, $5, $7);
-        delete $3;
+        $1->addArrayDeclaration($3, $5, $7);
         $$ = $1;
     }
     | pidentifier 
     {
         $$ = new DeclarationsNode();
-        $$->addVariableDeclaration(*$1);
-        delete $1;
+        $$->addVariableDeclaration($1);
     }
     | pidentifier '[' num ':' num ']' 
     {
         $$ = new DeclarationsNode();
-        $$->addArrayDeclaration(*$1, $3, $5);
-        delete $1;
+        $$->addArrayDeclaration($1, $3, $5);
     }
 ;
 
 args_decl:
     args_decl ',' pidentifier
     {
-        $1->addVariableArgument(*$3);
-        delete $3;
+        $1->addVariableArgument($3);
         $$ = $1;
     }
     | args_decl ',' T pidentifier
     {
-        $1->addArrayArgument(*$4);
-        delete $4;
+        $1->addArrayArgument($4);
         $$ = $1;
     }
     | pidentifier
     {
         $$ = new ArgumentsDeclarationNode();
-        $$->addVariableArgument(*$1);
-        delete $1;
+        $$->addVariableArgument($1);
     }
     | T pidentifier
     {
         $$ = new ArgumentsDeclarationNode();
-        $$->addArrayArgument(*$2);
-        delete $2;
+        $$->addArrayArgument($2);
     }
 ;
 
 args:
     args ',' pidentifier 
     {
-        $1->addArgument(*$3);
-        delete $3;
+        $1->addArgument($3);
         $$ = $1;
     }
     | pidentifier
     {
         $$ = new ProcedureCallArguments();
-        $$->addArgument(*$1);
-        delete $1;
+        $$->addArgument($1);
     }
 ;
 
@@ -318,19 +306,15 @@ value:
 identifier:
     pidentifier
     {
-        $$ = new IdentifierNode(*$1);
-        delete $1;
+        $$ = new IdentifierNode($1);
     }
     | pidentifier '[' pidentifier ']'
     {
-        $$ = new IdentifierNode(*$1, new IdentifierNode(*$3));
-        delete $1;
-        delete $3;
+        $$ = new IdentifierNode($1, new IdentifierNode($3));
     }
     | pidentifier '[' num ']'
     {
-        $$ = new IdentifierNode(*$1, new ValueNode($3));
-        delete $1;
+        $$ = new IdentifierNode($1, new ValueNode($3));
     }
 ;
 
