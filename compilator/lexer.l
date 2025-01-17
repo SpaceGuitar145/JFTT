@@ -53,7 +53,7 @@ READ                        return READ;
 \,                          return ',';
 \;                          return ';';
 [_a-z]+                     { std::cout << "Matched token: pidentifier (" << yytext << ")\n"; yylval.strval = new std::string(yytext); return pidentifier; }
-[0-9]+                      yylval.num = std::stoll(yytext); return num;
+-?[0-9]+                      yylval.num = std::stoll(yytext); return num;
 [ \t\r\n]+                  ;
 
 <COMMENT>{
