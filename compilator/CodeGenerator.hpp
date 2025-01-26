@@ -335,23 +335,23 @@ private:
     {
         const std::string &currentProcedure = procedureCalls.back();
 
-        std::cout << "current context: " << currentProcedure << std::endl;
+        // std::cout << "current context: " << currentProcedure << std::endl;
 
         // Check procedure arguments
         auto argIt = procedureArguments.find(currentProcedure);
-        if (argIt != procedureArguments.end())
-        {
-            // Iterate through the inner map
-            std::cout << "Arguments for procedure '" << currentProcedure << "':" << std::endl;
-            for (const auto &[argName, argValue] : argIt->second)
-            {
-                std::cout << "  Argument: " << argName << ", Address: " << argValue << std::endl;
-            }
-        }
-        else
-        {
-            std::cout << "Procedure not found: " << currentProcedure << std::endl;
-        }
+        // if (argIt != procedureArguments.end())
+        // {
+        //     // Iterate through the inner map
+        //     std::cout << "Arguments for procedure '" << currentProcedure << "':" << std::endl;
+        //     for (const auto &[argName, argValue] : argIt->second)
+        //     {
+        //         std::cout << "  Argument: " << argName << ", Address: " << argValue << std::endl;
+        //     }
+        // }
+        // else
+        // {
+        //     std::cout << "Procedure not found: " << currentProcedure << std::endl;
+        // }
         if (argIt != procedureArguments.end())
         {
 
@@ -365,19 +365,19 @@ private:
 
         // Check procedure variables
         auto varIt = procedureVariables.find(currentProcedure);
-        if (varIt != procedureVariables.end())
-        {
-            // Iterate through the inner map
-            std::cout << "Variables for procedure '" << currentProcedure << "':" << std::endl;
-            for (const auto &[argName, argValue] : varIt->second)
-            {
-                std::cout << "  Variable: " << argName << ", Address: " << argValue << std::endl;
-            }
-        }
-        else
-        {
-            std::cout << "Procedure not found: " << currentProcedure << std::endl;
-        }
+        // if (varIt != procedureVariables.end())
+        // {
+        //     // Iterate through the inner map
+        //     std::cout << "Variables for procedure '" << currentProcedure << "':" << std::endl;
+        //     for (const auto &[argName, argValue] : varIt->second)
+        //     {
+        //         std::cout << "  Variable: " << argName << ", Address: " << argValue << std::endl;
+        //     }
+        // }
+        // else
+        // {
+        //     std::cout << "Procedure not found: " << currentProcedure << std::endl;
+        // }
         if (varIt != procedureVariables.end())
         {
             auto localIt = varIt->second.find(name);
@@ -1383,8 +1383,8 @@ public:
         {
             if (auto variable = dynamic_cast<IdentifierNode *>(writeNode->value))
             {
-                std::cout << "WRITE: " << procedureCalls.back() << std::endl;
                 auto address = getProcedureIdentifierAddress(*variable->name);
+                auto it = iteratorMemoryMap.find(*variable->name);
                 if (address == 1)
                 {
                     address = getProcedureArgumentAddress(*variable->name);
@@ -1409,6 +1409,11 @@ public:
                     generateProcedureArgumentsArrayAccess(variable);
                     loadArrayValue(memoryPointer);
                     instructions.emplace_back("PUT", 0, true);
+                }
+                else if (it != iteratorMemoryMap.end())
+                {
+                    long long address = getIteratorAddress(*variable->name);
+                    instructions.emplace_back("PUT", address, true);
                 }
             }
         }
@@ -1444,13 +1449,51 @@ public:
         if (!assignNode || !assignNode->identifier || !assignNode->expression)
             return;
 
-        if (auto variable = dynamic_cast<IdentifierNode *>(assignNode->identifier))
+        if (procedureCalls.back() != "main")
+        {
+            if (auto variable = dynamic_cast<IdentifierNode *>(assignNode->identifier))
+            {
+                auto address = getProcedureIdentifierAddress(*variable->name);
+                std::cout << "ASSIGN " << *variable->name << std::endl;
+                if (address == 1)
+                {
+                    generateExpression(assignNode->expression);
+                    address = getProcedureArgumentAddress(*variable->name);
+                    instructions.emplace_back("STOREI", address, true);
+                }
+                else if (address == 2)
+                {
+                    generateExpression(assignNode->expression);
+                    address = getProcedureVariableAddress(*variable->name);
+                    instructions.emplace_back("STORE", address, true);
+                }
+                else if (address == 3)
+                {
+                    generateProcedureArrayAccess(variable);
+                    long long temp = memoryPointer++;
+                    generateExpression(assignNode->expression);
+                    storeArrayValue(temp);
+                    maxMemoryPointer = std::max(maxMemoryPointer, memoryPointer);
+
+                    memoryPointer--;
+                }
+                else if (address == 4)
+                {
+                    generateProcedureArgumentsArrayAccess(variable);
+                    long long temp = memoryPointer++;
+                    generateExpression(assignNode->expression);
+                    storeArrayValue(temp);
+                    maxMemoryPointer = std::max(maxMemoryPointer, memoryPointer);
+
+                    memoryPointer--;
+                }
+            }
+        }
+        else if (auto variable = dynamic_cast<IdentifierNode *>(assignNode->identifier))
         {
             auto it = iteratorMemoryMap.find(*variable->name);
             if (variable->index)
             {
-                // generateArrayAccess(variable);
-                // loadArrayValue(memoryPointer);
                 generateArrayAccess(variable);
                 long long temp = memoryPointer++;
                 generateExpression(assignNode->expression);
@@ -1470,52 +1513,48 @@ public:
                 instructions.emplace_back("STORE", address, true);
             }
         }
-
-        // if (assignNode->identifier->index)
-        // {
-        //     generateArrayAccess(assignNode->identifier);
-        //     long long temp = memoryPointer++;
-        //     generateExpression(assignNode->expression);
-        //     storeArrayValue(temp);
-        //     memoryPointer--;
-        // }
-        // else
-        // {
-        //     generateExpression(assignNode->expression);
-        //     long long address = getVariableMemoryAddress(*assignNode->identifier->name);
-        //     instructions.emplace_back("STORE", address, true);
-        // }
     }
 
     void generateExpression(ExpressionNode *expression)
     {
-        if (auto variable = dynamic_cast<IdentifierNode *>(expression))
-        {
-            auto it = iteratorMemoryMap.find(*variable->name);
-            if (variable->index)
-            {
-                generateArrayAccess(variable);
-                loadArrayValue(memoryPointer);
-            }
-            else if (it != iteratorMemoryMap.end())
-            {
-                long long address = getIteratorAddress(*variable->name);
-                instructions.emplace_back("LOAD", address, true);
-            }
-            else
-            {
-                long long address = getVariableMemoryAddress(*variable->name);
-                instructions.emplace_back("LOAD", address, true);
-            }
-        }
-        else if (auto valueNode = dynamic_cast<ValueNode *>(expression))
-        {
-            instructions.emplace_back("SET", valueNode->value, true);
-        }
-        else if (auto binaryExpr = dynamic_cast<BinaryExpressionNode *>(expression))
+        if (auto binaryExpr = dynamic_cast<BinaryExpressionNode *>(expression))
         {
             bool isLeftArray = false;
-            if (auto leftVar = dynamic_cast<IdentifierNode *>(binaryExpr->left))
+            if (procedureCalls.back() != "main")
+            {
+                if (auto leftVar = dynamic_cast<IdentifierNode *>(binaryExpr->left))
+                {
+                    auto address = getProcedureIdentifierAddress(*leftVar->name);
+                    if (address == 1)
+                    {
+                        address = getProcedureArgumentAddress(*leftVar->name);
+                        instructions.emplace_back("LOADI", address, true);
+                        instructions.emplace_back("STORE", memoryPointer, true);
+                    }
+                    else if (address == 2)
+                    {
+                        address = getProcedureVariableAddress(*leftVar->name);
+                        instructions.emplace_back("LOAD", address, true);
+                        instructions.emplace_back("STORE", memoryPointer, true);
+                    }
+                    else if (address == 3)
+                    {
+                        generateProcedureArrayAccess(leftVar);
+                        isLeftArray = true;
+                    }
+                    else if (address == 4)
+                    {
+                        generateProcedureArgumentsArrayAccess(leftVar);
+                        isLeftArray = true;
+                    }
+                }
+                else if (auto valueNode = dynamic_cast<ValueNode *>(binaryExpr->left))
+                {
+                    instructions.emplace_back("SET", valueNode->value, true);
+                    instructions.emplace_back("STORE", memoryPointer, true);
+                }
+            }
+            else if (auto leftVar = dynamic_cast<IdentifierNode *>(binaryExpr->left))
             {
                 auto it = iteratorMemoryMap.find(*leftVar->name);
                 if (leftVar->index)
@@ -1545,7 +1584,41 @@ public:
             long long leftTemp = memoryPointer++;
 
             bool isRightArray = false;
-            if (auto rightVar = dynamic_cast<IdentifierNode *>(binaryExpr->right))
+            if (procedureCalls.back() != "main")
+            {
+                if (auto rightVar = dynamic_cast<IdentifierNode *>(binaryExpr->right))
+                {
+                    auto address = getProcedureIdentifierAddress(*rightVar->name);
+                    if (address == 1)
+                    {
+                        address = getProcedureArgumentAddress(*rightVar->name);
+                        instructions.emplace_back("LOADI", address, true);
+                        instructions.emplace_back("STORE", memoryPointer, true);
+                    }
+                    else if (address == 2)
+                    {
+                        address = getProcedureVariableAddress(*rightVar->name);
+                        instructions.emplace_back("LOAD", address, true);
+                        instructions.emplace_back("STORE", memoryPointer, true);
+                    }
+                    else if (address == 3)
+                    {
+                        generateProcedureArrayAccess(rightVar);
+                        isRightArray = true;
+                    }
+                    else if (address == 4)
+                    {
+                        generateProcedureArgumentsArrayAccess(rightVar);
+                        isRightArray = true;
+                    }
+                }
+                else if (auto valueNode = dynamic_cast<ValueNode *>(binaryExpr->right))
+                {
+                    instructions.emplace_back("SET", valueNode->value, true);
+                    instructions.emplace_back("STORE", memoryPointer, true);
+                }
+            }
+            else if (auto rightVar = dynamic_cast<IdentifierNode *>(binaryExpr->right))
             {
                 auto it = iteratorMemoryMap.find(*rightVar->name);
                 if (rightVar->index)
@@ -1681,10 +1754,10 @@ public:
                 handleArrayValues(isLeftArray, isRightArray, leftTemp, rightTemp, leftValue, rightValue);
                 // Handle division by zero
                 instructions.emplace_back("LOAD", rightValue, true);
-                instructions.emplace_back("JZERO", 30, true); // Skip the whole operation if divisor is zero
+                instructions.emplace_back("JZERO", 32, true); // Skip the whole operation if divisor is zero
 
                 instructions.emplace_back("LOAD", leftValue, true);
-                instructions.emplace_back("JZERO", 28, true); // Skip the whole operation if divisor is zero
+                instructions.emplace_back("JZERO", 30, true); // Skip the whole operation if divisor is zero
 
                 // Store remainder (initialize with dividend)
                 instructions.emplace_back("LOAD", leftValue, true);
@@ -1694,7 +1767,7 @@ public:
                 // Check if divisor is positive
                 instructions.emplace_back("SET", 0, true);
                 instructions.emplace_back("SUB", rightValue, true);
-                instructions.emplace_back("JPOS", 12, true); // Jump to negative divisor case
+                instructions.emplace_back("JPOS", 13, true); // Jump to negative divisor case
 
                 // Positive divisor case
                 instructions.emplace_back("LOAD", remainderTemp, true);
@@ -1705,11 +1778,12 @@ public:
 
                 // // Adjust for negative dividend
                 instructions.emplace_back("LOAD", remainderTemp, true);
-                instructions.emplace_back("JPOS", 4, true); // Skip if remainder >= 0
+                instructions.emplace_back("JPOS", 5, true);  // Skip if remainder >= 0
+                instructions.emplace_back("JZERO", 4, true); // Skip if remainder == 0
                 instructions.emplace_back("ADD", rightValue, true);
                 instructions.emplace_back("STORE", remainderTemp, true);
-                instructions.emplace_back("JUMP", -3, true);
-                instructions.emplace_back("JUMP", 11, true); // Skip negative divisor case
+                instructions.emplace_back("JUMP", -4, true);
+                instructions.emplace_back("JUMP", 12, true); // Skip negative divisor case
 
                 // Negative divisor case
                 instructions.emplace_back("LOAD", remainderTemp, true);
@@ -1720,10 +1794,11 @@ public:
 
                 // Adjust for positive dividend
                 instructions.emplace_back("LOAD", remainderTemp, true);
-                instructions.emplace_back("JNEG", 4, true); // Skip if remainder <= 0
+                instructions.emplace_back("JNEG", 5, true);  // Skip if remainder <= 0
+                instructions.emplace_back("JZERO", 4, true); // Skip if remainder == 0
                 instructions.emplace_back("ADD", rightValue, true);
                 instructions.emplace_back("STORE", remainderTemp, true);
-                instructions.emplace_back("JUMP", -3, true);
+                instructions.emplace_back("JUMP", -4, true);
 
                 // Load final result
                 instructions.emplace_back("LOAD", remainderTemp, true);
@@ -1736,6 +1811,60 @@ public:
                 if (isRightArray)
                     memoryPointer--;
             }
+        }
+        else if (procedureCalls.back() != "main")
+        {
+            if (auto variable = dynamic_cast<IdentifierNode *>(expression))
+            {
+                auto address = getProcedureIdentifierAddress(*variable->name);
+                if (address == 1)
+                {
+                    address = getProcedureArgumentAddress(*variable->name);
+                    instructions.emplace_back("LOADI", address, true);
+                }
+                else if (address == 2)
+                {
+                    address = getProcedureVariableAddress(*variable->name);
+                    instructions.emplace_back("LOAD", address, true);
+                }
+                else if (address == 3)
+                {
+                    generateProcedureArrayAccess(variable);
+                    loadArrayValue(memoryPointer);
+                }
+                else if (address == 4)
+                {
+                    generateProcedureArgumentsArrayAccess(variable);
+                    loadArrayValue(memoryPointer);
+                }
+            }
+            else if (auto valueNode = dynamic_cast<ValueNode *>(expression))
+            {
+                instructions.emplace_back("SET", valueNode->value, true);
+            }
+        }
+        else if (auto variable = dynamic_cast<IdentifierNode *>(expression))
+        {
+            auto it = iteratorMemoryMap.find(*variable->name);
+            if (variable->index)
+            {
+                generateArrayAccess(variable);
+                loadArrayValue(memoryPointer);
+            }
+            else if (it != iteratorMemoryMap.end())
+            {
+                long long address = getIteratorAddress(*variable->name);
+                instructions.emplace_back("LOAD", address, true);
+            }
+            else
+            {
+                long long address = getVariableMemoryAddress(*variable->name);
+                instructions.emplace_back("LOAD", address, true);
+            }
+        }
+        else if (auto valueNode = dynamic_cast<ValueNode *>(expression))
+        {
+            instructions.emplace_back("SET", valueNode->value, true);
         }
     }
 

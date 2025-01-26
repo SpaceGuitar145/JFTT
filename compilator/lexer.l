@@ -41,8 +41,8 @@ READ                        return READ;
 \%                          return '%';
 \=                          return '=';
 "!="                        return NEQ;
-\>                          return '<';
-\<                          return '>';
+\<                          return '<';
+\>                          return '>';
 ">="                        return GEQ;
 "<="                        return LEQ;
 \[                          return '[';
@@ -52,8 +52,8 @@ READ                        return READ;
 \:                          return ':';
 \,                          return ',';
 \;                          return ';';
-[_a-z]+                     { std::cout << "Matched token: pidentifier (" << yytext << ")\n"; yylval.strval = new std::string(yytext); return pidentifier; }
--?[0-9]+                      yylval.num = std::stoll(yytext); return num;
+[0-9]+                      yylval.num = std::stoll(yytext); return num;
+[_a-z]+                     yylval.strval = new std::string(yytext); return pidentifier;
 [ \t\r\n]+                  ;
 
 <COMMENT>{
