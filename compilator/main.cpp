@@ -25,8 +25,8 @@ int main(int argc, char** argv) {
         std::cout << "Parsing completed successfully." << std::endl;
 
         if (root) {
-            std::cout << "Generated AST:" << std::endl;
-            root->print();
+            // std::cout << "Generated AST:" << std::endl;
+            // root->print();
 
             try {
                 CodeGenerator generator;
