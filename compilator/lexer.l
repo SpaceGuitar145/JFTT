@@ -4,7 +4,7 @@
 #include "parser.tab.h"
 %}
 
-%option noyywrap noinput nounput
+%option noyywrap noinput nounput yylineno
 
 %x COMMENT
 

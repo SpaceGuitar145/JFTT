@@ -29,6 +29,13 @@ public:
     }
 };
 
+class CodeGeneratorError : public std::runtime_error
+{
+public:
+    CodeGeneratorError(const std::string &message, int line)
+        : std::runtime_error("Error at line " + std::to_string(line) + ": " + message) {}
+};
+
 class CodeGenerator
 {
 private:
@@ -41,13 +48,33 @@ private:
     std::unordered_map<std::string, std::unordered_map<std::string, long long>> procedureVariables;
     std::unordered_map<std::string, std::unordered_map<std::string, std::pair<long long, long long>>> procedureArrays;
     std::unordered_map<std::string, std::unordered_map<std::string, long long>> procedureArgumentsArrays;
+    std::unordered_map<std::string, std::unordered_map<std::string, long long>> initializedVariables;
     std::vector<std::string> procedureCalls;
     std::unordered_map<std::string, std::unordered_map<long long, std::pair<std::string, bool>>> argumentsPlaces;
     long long memoryPointer = 1;
     long long maxMemoryPointer = memoryPointer;
 
+    std::unordered_map<std::string, std::unordered_map<std::string, bool>> procedureIterators;
+
+    void isInitialiazed(IdentifierNode *identifier)
+    {
+        if (!initializedVariables[procedureCalls.back()].count(*identifier->name))
+        {
+            throw std::runtime_error("Variable is not initialized: " + *identifier->name);
+        }
+    }
+
+    void initializeVariable(const std::string &name)
+    {
+        initializedVariables[procedureCalls.back()][name] = true;
+    }
+
     void generateArrayAccess(IdentifierNode *identifier)
     {
+        if (auto index = dynamic_cast<IdentifierNode *>(identifier->index))
+        {
+            isInitialiazed(index);
+        }
         generateExpression(identifier->index);
         long long baseAddress = getArrayElementAddress(*identifier->name);
         instructions.emplace_back("ADD", baseAddress, true);
@@ -123,15 +150,27 @@ private:
 
     void performMultiplication(long long leftValue, long long rightValue, long long resultTemp)
     {
+        instructions.emplace_back("LOAD", leftValue, true);
+        instructions.emplace_back("JZERO", 15, true);
+
+        instructions.emplace_back("HALF", 0, false);
+        instructions.emplace_back("ADD", 0, true);
+        instructions.emplace_back("SUB", leftValue, true);
+        instructions.emplace_back("JZERO", 4, true);
+
         instructions.emplace_back("LOAD", rightValue, true);
-        instructions.emplace_back("JZERO", 8, true);
-        instructions.emplace_back("LOAD", resultTemp, true);
-        instructions.emplace_back("ADD", leftValue, true);
+        instructions.emplace_back("ADD", resultTemp, true);
         instructions.emplace_back("STORE", resultTemp, true);
-        instructions.emplace_back("SET", -1, true);
+
+        instructions.emplace_back("LOAD", leftValue, true);
+        instructions.emplace_back("HALF", 0, false);
+        instructions.emplace_back("STORE", leftValue, true);
+
+        instructions.emplace_back("LOAD", rightValue, true);
         instructions.emplace_back("ADD", rightValue, true);
         instructions.emplace_back("STORE", rightValue, true);
-        instructions.emplace_back("JUMP", -7, true);
+
+        instructions.emplace_back("JUMP", -15, true);
     }
 
     void applySign(long long resultTemp, long long signTemp)
@@ -146,15 +185,64 @@ private:
 
     void performDivision(long long leftValue, long long rightValue, long long resultTemp)
     {
-        instructions.emplace_back("LOAD", leftValue, true);
-        instructions.emplace_back("SUB", rightValue, true);
-        instructions.emplace_back("JNEG", 7, true);
-        instructions.emplace_back("STORE", leftValue, true);
-        instructions.emplace_back("LOAD", resultTemp, true);
+        instructions.emplace_back("LOAD", rightValue, true);
+        instructions.emplace_back("STORE", memoryPointer, true);
+        long long currentDivisor = memoryPointer++;
+
         instructions.emplace_back("SET", 1, true);
-        instructions.emplace_back("ADD", resultTemp, true);
+        instructions.emplace_back("STORE", memoryPointer, true);
+        long long currentQuotient = memoryPointer++;
+
+        instructions.emplace_back("LOAD", leftValue, true);
+        instructions.emplace_back("SUB", currentDivisor, true);
+        instructions.emplace_back("JNEG", 8, true);
+
+        instructions.emplace_back("LOAD", currentDivisor, true);
+        instructions.emplace_back("ADD", currentDivisor, true);
+        instructions.emplace_back("STORE", currentDivisor, true);
+
+        instructions.emplace_back("LOAD", currentQuotient, true);
+        instructions.emplace_back("ADD", currentQuotient, true);
+        instructions.emplace_back("STORE", currentQuotient, true);
+
+        instructions.emplace_back("JUMP", -9, true);
+
+        instructions.emplace_back("LOAD", currentDivisor, true);
+        instructions.emplace_back("HALF", 0, false);
+        instructions.emplace_back("STORE", currentDivisor, true);
+
+        instructions.emplace_back("LOAD", currentQuotient, true);
+        instructions.emplace_back("HALF", 0, false);
+        instructions.emplace_back("STORE", currentQuotient, true);
+
+        instructions.emplace_back("LOAD", leftValue, true);
+        instructions.emplace_back("SUB", currentDivisor, true);
+        instructions.emplace_back("STORE", leftValue, true);
+
+        instructions.emplace_back("LOAD", resultTemp, true);
+        instructions.emplace_back("ADD", currentQuotient, true);
         instructions.emplace_back("STORE", resultTemp, true);
-        instructions.emplace_back("JUMP", -8, true);
+
+        instructions.emplace_back("LOAD", rightValue, true);
+        instructions.emplace_back("STORE", currentDivisor, true);
+
+        instructions.emplace_back("SET", 1, true);
+        instructions.emplace_back("STORE", currentQuotient, true);
+
+        instructions.emplace_back("LOAD", leftValue, true);
+        instructions.emplace_back("SUB", currentDivisor, true);
+        instructions.emplace_back("JNEG", 2, true);
+        instructions.emplace_back("JUMP", -33, true);
+
+        // instructions.emplace_back("LOAD", leftValue, true);
+        // instructions.emplace_back("SUB", rightValue, true);
+        // instructions.emplace_back("JNEG", 7, true);
+        // instructions.emplace_back("STORE", leftValue, true);
+        // instructions.emplace_back("LOAD", resultTemp, true);
+        // instructions.emplace_back("SET", 1, true);
+        // instructions.emplace_back("ADD", resultTemp, true);
+        // instructions.emplace_back("STORE", resultTemp, true);
+        // instructions.emplace_back("JUMP", -8, true);
     }
 
     void allocateIterator(const std::string &name)
@@ -188,8 +276,6 @@ private:
 
     void allocateProcedureArgument(const std::string &procedureName, const std::string &argumentName)
     {
-        // std::cout << "add var argument" << std::endl;
-
         if (procedureArguments[procedureName].count(argumentName))
         {
             throw std::runtime_error("Argument already declared: " + argumentName);
@@ -197,11 +283,7 @@ private:
 
         long long orderIndex = argumentsPlaces[procedureName].size() + 1;
         argumentsPlaces[procedureName][orderIndex] = {argumentName, false};
-
-        // std::cout << "Argument: " << argumentName << " " << orderIndex << std::endl;
-        // std::cout << "Argument: " << argumentsPlaces[procedureName][orderIndex].first << " " << orderIndex << std::endl;
-
-        // std::cout << "Memory Pointer: " << memoryPointer << std::endl;
+        initializedVariables[procedureName][argumentName] = true;
 
         procedureArguments[procedureName][argumentName] = memoryPointer++;
     }
@@ -215,17 +297,17 @@ private:
 
         long long orderIndex = argumentsPlaces[procedureName].size() + 1;
         argumentsPlaces[procedureName][orderIndex] = {argumentName, true};
+        initializedVariables[procedureName][argumentName] = true;
 
         procedureArgumentsArrays[procedureName][argumentName] = memoryPointer++;
     }
 
     void allocateProcedureVariable(const std::string &procedureName, const std::string &variableName)
     {
-        // Check if variable exists in procedure arguments
         if (procedureArguments[procedureName].count(variableName) ||
             procedureArgumentsArrays[procedureName].count(variableName))
         {
-            throw std::runtime_error("Variable name conflicts with procedure argument: " + variableName);
+            throw std::runtime_error("Variable name " + variableName + "conflicts with procedure argument: " + variableName);
         }
 
         if (procedureVariables[procedureName].count(variableName))
@@ -233,13 +315,10 @@ private:
             throw std::runtime_error("Variable already declared: " + variableName);
         }
         procedureVariables[procedureName][variableName] = memoryPointer++;
-
-        std::cout << "Procedure Variable: " << procedureName << " " << variableName << procedureVariables[procedureName][variableName] << std::endl;
     }
 
     void allocateProcedureArray(const std::string &procedureName, const std::string &variableName, long long start, long long end)
     {
-        // Check if array name exists in procedure arguments
         if (procedureArguments[procedureName].count(variableName) ||
             procedureArgumentsArrays[procedureName].count(variableName))
         {
@@ -335,81 +414,48 @@ private:
     {
         const std::string &currentProcedure = procedureCalls.back();
 
-        // std::cout << "current context: " << currentProcedure << std::endl;
-
-        // Check procedure arguments
         auto argIt = procedureArguments.find(currentProcedure);
-        // if (argIt != procedureArguments.end())
-        // {
-        //     // Iterate through the inner map
-        //     std::cout << "Arguments for procedure '" << currentProcedure << "':" << std::endl;
-        //     for (const auto &[argName, argValue] : argIt->second)
-        //     {
-        //         std::cout << "  Argument: " << argName << ", Address: " << argValue << std::endl;
-        //     }
-        // }
-        // else
-        // {
-        //     std::cout << "Procedure not found: " << currentProcedure << std::endl;
-        // }
         if (argIt != procedureArguments.end())
         {
 
             auto varIt = argIt->second.find(name);
             if (varIt != argIt->second.end())
             {
-                std::cout << "argument: " << varIt->first << " " << varIt->second << std::endl;
-                return 1; // Argument
+                return 1;
             }
         }
 
-        // Check procedure variables
         auto varIt = procedureVariables.find(currentProcedure);
-        // if (varIt != procedureVariables.end())
-        // {
-        //     // Iterate through the inner map
-        //     std::cout << "Variables for procedure '" << currentProcedure << "':" << std::endl;
-        //     for (const auto &[argName, argValue] : varIt->second)
-        //     {
-        //         std::cout << "  Variable: " << argName << ", Address: " << argValue << std::endl;
-        //     }
-        // }
-        // else
-        // {
-        //     std::cout << "Procedure not found: " << currentProcedure << std::endl;
-        // }
         if (varIt != procedureVariables.end())
         {
             auto localIt = varIt->second.find(name);
             if (localIt != varIt->second.end())
             {
-                return 2; // Variable
+                return 2;
             }
         }
 
-        // Check procedure arrays
         auto arrIt = procedureArrays.find(currentProcedure);
         if (arrIt != procedureArrays.end())
         {
             auto localIt = arrIt->second.find(name);
             if (localIt != arrIt->second.end())
             {
-                return 3; // Array
+                return 3;
             }
         }
 
-        // Check procedure argument arrays
         auto argArrIt = procedureArgumentsArrays.find(currentProcedure);
         if (argArrIt != procedureArgumentsArrays.end())
         {
             auto localIt = argArrIt->second.find(name);
             if (localIt != argArrIt->second.end())
             {
-                return 4; // Argument Array
+                return 4;
             }
         }
 
-        return -1; // Not found
+        return -1;
     }
 
     long long getIdentifierAddress(const std::string &name) const
@@ -462,6 +508,10 @@ private:
 
     long long generateProcedureArrayAccess(IdentifierNode *identifier)
     {
+        if (auto index = dynamic_cast<IdentifierNode *>(identifier->index))
+        {
+            isInitialiazed(index);
+        }
         generateExpression(identifier->index);
         long long baseAddress = getProcedureArrayElementAddress(*identifier->name);
         instructions.emplace_back("ADD", baseAddress, true);
@@ -471,6 +521,10 @@ private:
 
     long long generateProcedureArgumentsArrayAccess(IdentifierNode *identifier)
     {
+        if (auto index = dynamic_cast<IdentifierNode *>(identifier->index))
+        {
+            isInitialiazed(index);
+        }
         generateExpression(identifier->index);
         long long baseAddress = getProcedureArgumentArrayElementAddress(*identifier->name);
         instructions.emplace_back("ADDI", baseAddress, true);
@@ -481,33 +535,40 @@ private:
 public:
     void generateProgram(ProgramNode *programNode)
     {
-        if (!programNode)
+        try
         {
-            throw std::runtime_error("Cannot generate code for null ProgramNode.");
-        }
+            if (!programNode)
+            {
+                throw std::runtime_error("Cannot generate code for null ProgramNode.");
+            }
 
-        procedureCalls.emplace_back("main");
+            procedureCalls.emplace_back("main");
 
-        long long jumpToMain;
-        if (programNode->procedures)
-        {
-            instructions.emplace_back("JUMP", 0, true);
-            jumpToMain = instructions.size() - 1;
-            generateProcedures(programNode->procedures);
-        }
-
-        if (programNode->main)
-        {
-            memoryPointer = std::max(memoryPointer, maxMemoryPointer);
+            long long jumpToMain;
             if (programNode->procedures)
             {
-                instructions[jumpToMain].argument = instructions.size() - jumpToMain;
+                instructions.emplace_back("JUMP", 0, true);
+                jumpToMain = instructions.size() - 1;
+                generateProcedures(programNode->procedures);
             }
-            generateMain(programNode->main);
-            procedureCalls.pop_back();
-        }
 
-        instructions.emplace_back("HALT");
+            if (programNode->main)
+            {
+                memoryPointer = std::max(memoryPointer, maxMemoryPointer);
+                if (programNode->procedures)
+                {
+                    instructions[jumpToMain].argument = instructions.size() - jumpToMain;
+                }
+                generateMain(programNode->main);
+                procedureCalls.pop_back();
+            }
+
+            instructions.emplace_back("HALT");
+        }
+        catch (const CodeGeneratorError &e)
+        {
+            throw;
+        }
     }
 
     void generateProcedures(ProceduresNode *proceduresNode)
@@ -515,9 +576,7 @@ public:
         for (const auto &procedure : proceduresNode->procedures)
         {
             generateProcedure(procedure);
-            // std::cout << "Max Memory Pointer: " << maxMemoryPointer << std::endl;
             memoryPointer = maxMemoryPointer >= memoryPointer ? maxMemoryPointer + 1 : memoryPointer;
-            // std::cout << "Memory Pointer: " << memoryPointer << std::endl;
         }
     }
 
@@ -530,8 +589,6 @@ public:
 
         generateProcedureHead(procedureNode->arguments);
 
-        // std::cout << "Memory Pointer: " << memoryPointer << std::endl;
-
         if (procedureNode->declarations)
         {
             generateProcedureDeclarations(procedureNode->arguments->procedureName, procedureNode->declarations);
@@ -542,50 +599,69 @@ public:
         procedureCalls.emplace_back(*procedureNode->arguments->procedureName);
         generateCommands(procedureNode->commands);
         procedureCalls.pop_back();
-        // std::cout << "Memory Pointer: " << memoryPointer << std::endl;
 
         instructions.emplace_back("RTRN", procedureVariables[*procedureNode->arguments->procedureName]["return"], true);
     }
 
     void generateProcedureHead(ProcedureHeadNode *procedureHead)
     {
-        if (!procedureHead)
-            return;
-
-        if (procedureHead->argumentsDeclaration)
+        try
         {
-            generateArgumentsDeclaration(procedureHead->procedureName, procedureHead->argumentsDeclaration);
+            if (!procedureHead)
+                return;
+
+            if (procedureHead->argumentsDeclaration)
+            {
+                generateArgumentsDeclaration(procedureHead->procedureName, procedureHead->argumentsDeclaration);
+            }
+        }
+        catch (const CodeGeneratorError &e)
+        {
+            throw;
         }
     }
 
     void generateProcedureDeclarations(std::string *procedureName, DeclarationsNode *declarationsNode)
     {
-        for (const auto &var : declarationsNode->variables)
+        try
         {
-            if (var->isArrayRange)
+            for (const auto &var : declarationsNode->variables)
             {
-                allocateProcedureArray(*procedureName, *var->name, var->start, var->end);
+                if (var->isArrayRange)
+                {
+                    allocateProcedureArray(*procedureName, *var->name, var->start, var->end);
+                }
+                else
+                {
+                    allocateProcedureVariable(*procedureName, *var->name);
+                }
             }
-            else
-            {
-                std::cout << "Generating procedure variable: " << *procedureName << " " << *var->name << std::endl;
-                allocateProcedureVariable(*procedureName, *var->name);
-            }
+        }
+        catch (const std::runtime_error &e)
+        {
+            throw CodeGeneratorError(e.what(), declarationsNode->getLineNumber());
         }
     }
 
     void generateArgumentsDeclaration(std::string *procedureName, ArgumentsDeclarationNode *argumentsDeclarationNode)
     {
-        for (const auto &arg : argumentsDeclarationNode->args)
+        try
         {
-            if (arg->isArray)
+            for (const auto &arg : argumentsDeclarationNode->args)
             {
-                allocateProcedureArgumentArray(*procedureName, *arg->argumentName);
+                if (arg->isArray)
+                {
+                    allocateProcedureArgumentArray(*procedureName, *arg->argumentName);
+                }
+                else
+                {
+                    allocateProcedureArgument(*procedureName, *arg->argumentName);
+                }
             }
-            else
-            {
-                allocateProcedureArgument(*procedureName, *arg->argumentName);
-            }
+        }
+        catch (const std::runtime_error &e)
+        {
+            throw CodeGeneratorError(e.what(), argumentsDeclarationNode->getLineNumber());
         }
     }
 
@@ -603,16 +679,23 @@ public:
 
     void generateDeclarations(DeclarationsNode *declarationsNode)
     {
-        for (const auto &var : declarationsNode->variables)
+        try
         {
-            if (var->isArrayRange)
+            for (const auto &var : declarationsNode->variables)
             {
-                allocateArray(*var->name, var->start, var->end);
+                if (var->isArrayRange)
+                {
+                    allocateArray(*var->name, var->start, var->end);
+                }
+                else
+                {
+                    allocateVariable(*var->name);
+                }
             }
-            else
-            {
-                allocateVariable(*var->name);
-            }
+        }
+        catch (const std::runtime_error &e)
+        {
+            throw CodeGeneratorError(e.what(), declarationsNode->getLineNumber());
         }
     }
 
@@ -665,140 +748,167 @@ public:
 
     void generateProcedureCallArguments(const std::string &procedureName, ProcedureCallArguments *arguments)
     {
-        std::cout << "Generating procedure call arguments for: " << procedureName << std::endl;
-        if (arguments->arguments.size() != argumentsPlaces[procedureName].size())
+        try
         {
-            throw std::runtime_error("Argument count mismatch for procedure " + procedureName + ": expected " + std::to_string(argumentsPlaces[procedureName].size()) + " but got " + std::to_string(arguments->arguments.size()));
-        }
-        for (size_t i = 1; i <= arguments->arguments.size(); ++i)
-        {
-            const auto &arg = arguments->arguments[i - 1];
-            const auto &expectedArg = argumentsPlaces[procedureName][i];
-
-            if (auto identifier = dynamic_cast<IdentifierNode *>(arg))
+            if (arguments->arguments.size() != argumentsPlaces[procedureName].size())
             {
-                std::cout << "Argument: " << *identifier->name << " Expected: " << expectedArg.first << std::endl;
-                std::cout << "Procedure current: " << procedureCalls.back() << std::endl;
+                throw std::runtime_error("Argument count mismatch for procedure " + procedureName + ": expected " + std::to_string(argumentsPlaces[procedureName].size()) + " but got " + std::to_string(arguments->arguments.size()));
+            }
+            for (size_t i = 1; i <= arguments->arguments.size(); ++i)
+            {
+                const auto &arg = arguments->arguments[i - 1];
+                const auto &expectedArg = argumentsPlaces[procedureName][i];
 
-                std::string procedureRemember = procedureCalls.back();
-                procedureCalls.pop_back();
-                auto sign = getProcedureIdentifierAddress(*identifier->name);
-                std::cout << "Identifier sign: " << sign << std::endl;
-                procedureCalls.emplace_back(procedureRemember);
-                if (sign != -1)
+                if (auto identifier = dynamic_cast<IdentifierNode *>(arg))
                 {
-                    if (sign == 1)
+                    std::string procedureRemember = procedureCalls.back();
+                    procedureCalls.pop_back();
+                    auto sign = getProcedureIdentifierAddress(*identifier->name);
+                    procedureCalls.emplace_back(procedureRemember);
+                    if (sign != -1)
                     {
-                        if (expectedArg.second)
+                        if (sign == 1)
                         {
-                            throw std::runtime_error("Argument type mismatch for procedure " + procedureName + ": expected " + (expectedArg.second ? "array" : "variable") + " but got " + (identifier->isArrayRange ? "array" : "variable"));
+                            if (expectedArg.second)
+                            {
+                                throw std::runtime_error("Argument type mismatch for procedure " + procedureName + ": expected " + (expectedArg.second ? "array" : "variable") + " but got " + (identifier->isArrayRange ? "array" : "variable"));
+                            }
+                            std::string procedureRemember = procedureCalls.back();
+                            procedureCalls.pop_back();
+                            long long address = getProcedureArgumentAddress(*identifier->name);
+                            instructions.emplace_back("LOAD", address, true);
+                            procedureCalls.emplace_back(procedureRemember);
+                            long long argumentAddress = getProcedureArgumentAddress(expectedArg.first);
+                            instructions.emplace_back("STORE", argumentAddress, true);
+                            memoryPointer++;
                         }
-                        std::string procedureRemember = procedureCalls.back();
-                        procedureCalls.pop_back();
-                        long long address = getProcedureArgumentAddress(*identifier->name);
-                        instructions.emplace_back("LOAD", address, true);
-                        procedureCalls.emplace_back(procedureRemember);
-                        long long argumentAddress = getProcedureArgumentAddress(expectedArg.first);
-                        instructions.emplace_back("STORE", argumentAddress, true);
-                        memoryPointer++;
+                        else if (sign == 2)
+                        {
+                            if (expectedArg.second)
+                            {
+                                throw std::runtime_error("Argument type mismatch for procedure " + procedureName + ": expected " + (expectedArg.second ? "array" : "variable") + " but got " + (identifier->isArrayRange ? "array" : "variable"));
+                            }
+                            std::string procedureRemember = procedureCalls.back();
+                            procedureCalls.pop_back();
+                            long long address = getProcedureVariableAddress(*identifier->name);
+                            instructions.emplace_back("SET", address, true);
+                            procedureCalls.emplace_back(procedureRemember);
+                            long long argumentAddress = getProcedureArgumentAddress(expectedArg.first);
+                            instructions.emplace_back("STORE", argumentAddress, true);
+                            memoryPointer++;
+                        }
+                        else if (sign == 3)
+                        {
+                            if (!expectedArg.second)
+                            {
+                                throw std::runtime_error("Argument type mismatch for procedure " + procedureName + ": expected " + (expectedArg.second ? "array" : "variable") + " but got " + (identifier->isArrayRange ? "variable" : "array"));
+                            }
+                            std::string procedureRemember = procedureCalls.back();
+                            procedureCalls.pop_back();
+                            long long address = getProcedureArrayElementAddress(*identifier->name);
+                            instructions.emplace_back("SET", address, true);
+                            procedureCalls.emplace_back(procedureRemember);
+                            long long argumentAddress = getProcedureArgumentsArrayElementAddress(expectedArg.first);
+                            instructions.emplace_back("STORE", argumentAddress, true);
+                            memoryPointer++;
+                        }
+                        else if (sign == 4)
+                        {
+                            if (!expectedArg.second)
+                            {
+                                throw std::runtime_error("Argument type mismatch for procedure " + procedureName + ": expected " + (expectedArg.second ? "array" : "variable") + " but got " + (identifier->isArrayRange ? "array" : "variable"));
+                            }
+                            std::string procedureRemember = procedureCalls.back();
+                            procedureCalls.pop_back();
+                            long long address = getProcedureArgumentsArrayElementAddress(*identifier->name);
+                            instructions.emplace_back("LOAD", address, true);
+                            procedureCalls.emplace_back(procedureRemember);
+                            long long argumentAddress = getProcedureArgumentsArrayElementAddress(expectedArg.first);
+                            instructions.emplace_back("STORE", argumentAddress, true);
+                            memoryPointer++;
+                        }
                     }
-                    else if (sign == 2)
+                    else if (auto it = iteratorMemoryMap.find(*identifier->name); it != iteratorMemoryMap.end())
                     {
                         if (expectedArg.second)
                         {
-                            throw std::runtime_error("Argument type mismatch for procedure " + procedureName + ": expected " + (expectedArg.second ? "array" : "variable") + " but got " + (identifier->isArrayRange ? "array" : "variable"));
+                            throw std::runtime_error("Argument type mismatch for procedure " + procedureName + ": expected " + (expectedArg.second ? "array" : "variable") + " but got iterator");
                         }
-                        std::string procedureRemember = procedureCalls.back();
-                        procedureCalls.pop_back();
-                        long long address = getProcedureVariableAddress(*identifier->name);
+                        long long address = getIteratorAddress(*identifier->name);
                         instructions.emplace_back("SET", address, true);
-                        procedureCalls.emplace_back(procedureRemember);
                         long long argumentAddress = getProcedureArgumentAddress(expectedArg.first);
                         instructions.emplace_back("STORE", argumentAddress, true);
                         memoryPointer++;
                     }
-                    else if (sign == 3)
+                    else if (auto test = getIdentifierAddress(*identifier->name); test != -1)
                     {
                         if (!expectedArg.second)
                         {
                             throw std::runtime_error("Argument type mismatch for procedure " + procedureName + ": expected " + (expectedArg.second ? "array" : "variable") + " but got " + (identifier->isArrayRange ? "variable" : "array"));
                         }
-                        std::string procedureRemember = procedureCalls.back();
-                        procedureCalls.pop_back();
-                        long long address = getProcedureArrayElementAddress(*identifier->name);
+
+                        long long address = getArrayElementAddress(*identifier->name);
                         instructions.emplace_back("SET", address, true);
-                        procedureCalls.emplace_back(procedureRemember);
-                        long long argumentAddress = getProcedureArgumentsArrayElementAddress(expectedArg.first);
+                        long long argumentAddress = getProcedureArgumentArrayElementAddress(expectedArg.first);
                         instructions.emplace_back("STORE", argumentAddress, true);
                         memoryPointer++;
                     }
-                    else if (sign == 4)
+                    else
                     {
-                        if (!expectedArg.second)
+                        if (expectedArg.second)
                         {
                             throw std::runtime_error("Argument type mismatch for procedure " + procedureName + ": expected " + (expectedArg.second ? "array" : "variable") + " but got " + (identifier->isArrayRange ? "array" : "variable"));
                         }
-                        std::string procedureRemember = procedureCalls.back();
-                        procedureCalls.pop_back();
-                        long long address = getProcedureArgumentsArrayElementAddress(*identifier->name);
-                        instructions.emplace_back("LOAD", address, true);
-                        procedureCalls.emplace_back(procedureRemember);
-                        long long argumentAddress = getProcedureArgumentsArrayElementAddress(expectedArg.first);
+
+                        long long address = getVariableMemoryAddress(*identifier->name);
+                        instructions.emplace_back("SET", address, true);
+                        long long argumentAddress = getProcedureArgumentAddress(expectedArg.first);
                         instructions.emplace_back("STORE", argumentAddress, true);
                         memoryPointer++;
                     }
                 }
-                else if (auto test = getIdentifierAddress(*identifier->name); test != -1)
-                {
-                    if (!expectedArg.second)
-                    {
-                        throw std::runtime_error("Argument type mismatch for procedure " + procedureName + ": expected " + (expectedArg.second ? "array" : "variable") + " but got " + (identifier->isArrayRange ? "variable" : "array"));
-                    }
-
-                    long long address = getArrayElementAddress(*identifier->name);
-                    instructions.emplace_back("SET", address, true);
-                    long long argumentAddress = getProcedureArgumentArrayElementAddress(expectedArg.first);
-                    instructions.emplace_back("STORE", argumentAddress, true);
-                    memoryPointer++;
-                }
-                else
-                {
-                    if (expectedArg.second)
-                    {
-                        throw std::runtime_error("Argument type mismatch for procedure " + procedureName + ": expected " + (expectedArg.second ? "array" : "variable") + " but got " + (identifier->isArrayRange ? "array" : "variable"));
-                    }
-
-                    long long address = getVariableMemoryAddress(*identifier->name);
-                    instructions.emplace_back("SET", address, true);
-                    long long argumentAddress = getProcedureArgumentAddress(expectedArg.first);
-                    instructions.emplace_back("STORE", argumentAddress, true);
-                    memoryPointer++;
-                }
             }
+        }
+        catch (const std::runtime_error &e)
+        {
+            throw CodeGeneratorError(e.what(), arguments->getLineNumber());
         }
     }
 
     void generateProcedureCall(ProcedureCallNode *procedureCallNode)
     {
-        if (!procedureCallNode)
-            return;
-
-        std::cout << "Generating procedure call for: " << *procedureCallNode->procedureName << std::endl;
-
-        if (procedureCallNode->arguments)
+        try
         {
-            if (procedureEntryPoints[*procedureCallNode->procedureName] == 0)
-            {
-                throw std::runtime_error("Procedure not found: " + *procedureCallNode->procedureName);
-            }
-            procedureCalls.emplace_back(*procedureCallNode->procedureName);
-            generateProcedureCallArguments(*procedureCallNode->procedureName, procedureCallNode->arguments);
-            instructions.emplace_back("SET", instructions.size() + 3, true);
-            instructions.emplace_back("STORE", procedureVariables[*procedureCallNode->procedureName]["return"], true);
-            procedureCalls.pop_back();
-        }
+            if (!procedureCallNode)
+                return;
 
-        instructions.emplace_back("JUMP", procedureEntryPoints[*procedureCallNode->procedureName] - instructions.size(), true);
+            if (procedureCallNode->arguments)
+            {
+                if (procedureEntryPoints[*procedureCallNode->procedureName] == 0)
+                {
+                    throw std::runtime_error("Procedure not found: " + *procedureCallNode->procedureName);
+                }
+                if (procedureCalls.back() == *procedureCallNode->procedureName)
+                {
+                    throw std::runtime_error("Recursive call to procedure " + *procedureCallNode->procedureName);
+                }
+                procedureCalls.emplace_back(*procedureCallNode->procedureName);
+                generateProcedureCallArguments(*procedureCallNode->procedureName, procedureCallNode->arguments);
+                instructions.emplace_back("SET", instructions.size() + 3, true);
+                instructions.emplace_back("STORE", procedureVariables[*procedureCallNode->procedureName]["return"], true);
+                procedureCalls.pop_back();
+            }
+
+            instructions.emplace_back("JUMP", procedureEntryPoints[*procedureCallNode->procedureName] - instructions.size(), true);
+        }
+        catch (const CodeGeneratorError &e)
+        {
+            throw;
+        }
+        catch (const std::runtime_error &e)
+        {
+            throw CodeGeneratorError(e.what(), procedureCallNode->getLineNumber());
+        }
     }
 
     void generateRepeatUntilCommand(RepeatUntilNode *repeatUntilNode)
@@ -806,8 +916,6 @@ public:
         long long start = instructions.size();
         generateCommands(repeatUntilNode->commands);
         generateCondition(repeatUntilNode->condition);
-
-        // std::cout << repeatUntilNode->condition->operation << std::endl;
 
         if (repeatUntilNode->condition->operation == "=")
         {
@@ -914,83 +1022,206 @@ public:
 
     void generateForToNode(ForToNode *forToNode)
     {
-        allocateIterator(*forToNode->pidentifier->name);
-        long long iterator = getIteratorAddress(*forToNode->pidentifier->name);
-
-        if (auto fromValue = dynamic_cast<IdentifierNode *>(forToNode->fromValue))
+        try
         {
-            auto it = iteratorMemoryMap.find(*fromValue->name);
-            if (fromValue->index)
+            auto procedureName = procedureCalls.back();
+            procedureIterators[procedureName][*forToNode->pidentifier->name] = true;
+
+            allocateIterator(*forToNode->pidentifier->name);
+            long long iterator = getIteratorAddress(*forToNode->pidentifier->name);
+
+            if (procedureCalls.back() != "main")
             {
-                generateArrayAccess(fromValue);
-                loadArrayValue(memoryPointer);
+                if (auto fromValue = dynamic_cast<IdentifierNode *>(forToNode->fromValue))
+                {
+                    auto address = getProcedureIdentifierAddress(*fromValue->name);
+                    auto it = iteratorMemoryMap.find(*fromValue->name);
+                    if (fromValue->index || (address == 3 || address == 4))
+                    {
+                        if (!fromValue->index)
+                        {
+                            throw std::runtime_error("Misuse of array variable: " + *fromValue->name);
+                        }
+                        else if (address == 3)
+                        {
+                            generateProcedureArrayAccess(fromValue);
+                            loadArrayValue(memoryPointer);
+                        }
+                        else if (address == 4)
+                        {
+                            generateProcedureArgumentsArrayAccess(fromValue);
+                            loadArrayValue(memoryPointer);
+                        }
+                        else
+                        {
+                            throw std::runtime_error("Undeclared array: " + *fromValue->name);
+                        }
+                    }
+                    else if (address == 1)
+                    {
+                        address = getProcedureArgumentAddress(*fromValue->name);
+                        instructions.emplace_back("LOADI", address, true);
+                    }
+                    else if (address == 2)
+                    {
+                        isInitialiazed(fromValue);
+                        address = getProcedureVariableAddress(*fromValue->name);
+                        instructions.emplace_back("LOAD", address, true);
+                    }
+                    else if (it != iteratorMemoryMap.end())
+                    {
+                        long long address = getIteratorAddress(*fromValue->name);
+                        instructions.emplace_back("LOAD", address, true);
+                    }
+                    else
+                    {
+                        throw std::runtime_error("Undeclared variable: " + *fromValue->name);
+                    }
+                }
+                else if (auto valueNode = dynamic_cast<ValueNode *>(forToNode->fromValue))
+                {
+                    instructions.emplace_back("SET", valueNode->value, true);
+                }
             }
-            else if (it != iteratorMemoryMap.end())
+            else if (auto fromValue = dynamic_cast<IdentifierNode *>(forToNode->fromValue))
             {
-                long long address = getIteratorAddress(*fromValue->name);
-                instructions.emplace_back("LOAD", address, true);
+                auto it = iteratorMemoryMap.find(*fromValue->name);
+                if (fromValue->index)
+                {
+                    generateArrayAccess(fromValue);
+                    loadArrayValue(memoryPointer);
+                }
+                else if (it != iteratorMemoryMap.end())
+                {
+                    long long address = getIteratorAddress(*fromValue->name);
+                    instructions.emplace_back("LOAD", address, true);
+                }
+                else
+                {
+                    isInitialiazed(fromValue);
+                    long long address = getVariableMemoryAddress(*fromValue->name);
+                    instructions.emplace_back("LOAD", address, true);
+                }
             }
-            else
+            else if (auto valueNode = dynamic_cast<ValueNode *>(forToNode->fromValue))
             {
-                long long address = getVariableMemoryAddress(*fromValue->name);
-                instructions.emplace_back("LOAD", address, true);
+                instructions.emplace_back("SET", valueNode->value, true);
             }
+
+            instructions.emplace_back("STORE", iterator, true);
+
+            if (procedureCalls.back() != "main")
+            {
+                if (auto rightVar = dynamic_cast<IdentifierNode *>(forToNode->toValue))
+                {
+                    auto address = getProcedureIdentifierAddress(*rightVar->name);
+                    auto it = iteratorMemoryMap.find(*rightVar->name);
+                    if (rightVar->index || (address == 3 || address == 4))
+                    {
+                        if (!rightVar->index)
+                        {
+                            throw std::runtime_error("Misuse of array variable: " + *rightVar->name);
+                        }
+                        else if (address == 3)
+                        {
+                            generateProcedureArrayAccess(rightVar);
+                            loadArrayValue(memoryPointer);
+                        }
+                        else if (address == 4)
+                        {
+                            generateProcedureArgumentsArrayAccess(rightVar);
+                            loadArrayValue(memoryPointer);
+                        }
+                        else
+                        {
+                            throw std::runtime_error("Undeclared array: " + *rightVar->name);
+                        }
+                    }
+                    else if (address == 1)
+                    {
+                        address = getProcedureArgumentAddress(*rightVar->name);
+                        instructions.emplace_back("LOADI", address, true);
+                    }
+                    else if (address == 2)
+                    {
+                        isInitialiazed(rightVar);
+                        address = getProcedureVariableAddress(*rightVar->name);
+                        instructions.emplace_back("LOAD", address, true);
+                    }
+                    else if (it != iteratorMemoryMap.end())
+                    {
+                        long long address = getIteratorAddress(*rightVar->name);
+                        instructions.emplace_back("LOAD", address, true);
+                    }
+                    else
+                    {
+                        throw std::runtime_error("Undeclared variable: " + *rightVar->name);
+                    }
+                }
+                else if (auto valueNode = dynamic_cast<ValueNode *>(forToNode->toValue))
+                {
+                    instructions.emplace_back("SET", valueNode->value, true);
+                }
+            }
+            else if (auto toValue = dynamic_cast<IdentifierNode *>(forToNode->toValue))
+            {
+                auto it = iteratorMemoryMap.find(*toValue->name);
+                if (toValue->index)
+                {
+                    generateArrayAccess(toValue);
+                    loadArrayValue(memoryPointer);
+                }
+                else if (it != iteratorMemoryMap.end())
+                {
+                    long long address = getIteratorAddress(*toValue->name);
+                    instructions.emplace_back("LOAD", address, true);
+                }
+                else
+                {
+                    isInitialiazed(toValue);
+                    long long address = getVariableMemoryAddress(*toValue->name);
+                    instructions.emplace_back("LOAD", address, true);
+                }
+            }
+            else if (auto valueNode = dynamic_cast<ValueNode *>(forToNode->toValue))
+            {
+                instructions.emplace_back("SET", valueNode->value, true);
+            }
+
+            instructions.emplace_back("STORE", memoryPointer, true);
+            long long toValue = memoryPointer++;
+
+            instructions.emplace_back("LOAD", iterator, true);
+            long long loopStart = instructions.size() - 1;
+            instructions.emplace_back("SUB", toValue, true);
+            instructions.emplace_back("JPOS", 0, true);
+            long long skipLoopJump = instructions.size() - 1;
+
+            generateCommands(forToNode->commands);
+
+            instructions.emplace_back("SET", 1, true);
+            instructions.emplace_back("ADD", iterator, true);
+            instructions.emplace_back("STORE", iterator, true);
+
+            instructions.emplace_back("JUMP", loopStart - instructions.size(), true);
+
+            long long loopEnd = instructions.size();
+            instructions[skipLoopJump].argument = loopEnd - skipLoopJump;
+
+            maxMemoryPointer = std::max(maxMemoryPointer, memoryPointer);
+
+            memoryPointer -= 1;
+            deallocateIterator(*forToNode->pidentifier->name);
+            procedureIterators[procedureName][*forToNode->pidentifier->name] = false;
         }
-        else if (auto valueNode = dynamic_cast<ValueNode *>(forToNode->fromValue))
+        catch (const CodeGeneratorError &e)
         {
-            instructions.emplace_back("SET", valueNode->value, true);
+            throw;
         }
-
-        instructions.emplace_back("STORE", iterator, true);
-
-        if (auto toValue = dynamic_cast<IdentifierNode *>(forToNode->toValue))
+        catch (const std::runtime_error &e)
         {
-            auto it = iteratorMemoryMap.find(*toValue->name);
-            if (toValue->index)
-            {
-                generateArrayAccess(toValue);
-                loadArrayValue(memoryPointer);
-            }
-            else if (it != iteratorMemoryMap.end())
-            {
-                long long address = getIteratorAddress(*toValue->name);
-                instructions.emplace_back("LOAD", address, true);
-            }
-            else
-            {
-                long long address = getVariableMemoryAddress(*toValue->name);
-                instructions.emplace_back("LOAD", address, true);
-            }
+            throw CodeGeneratorError(e.what(), forToNode->getLineNumber());
         }
-        else if (auto valueNode = dynamic_cast<ValueNode *>(forToNode->toValue))
-        {
-            instructions.emplace_back("SET", valueNode->value, true);
-        }
-
-        instructions.emplace_back("STORE", memoryPointer, true);
-        long long toValue = memoryPointer++;
-
-        instructions.emplace_back("LOAD", iterator, true);
-        long long loopStart = instructions.size() - 1;
-        instructions.emplace_back("SUB", toValue, true);
-        instructions.emplace_back("JPOS", 0, true);
-        long long skipLoopJump = instructions.size() - 1;
-
-        generateCommands(forToNode->commands);
-
-        instructions.emplace_back("SET", 1, true);
-        instructions.emplace_back("ADD", iterator, true);
-        instructions.emplace_back("STORE", iterator, true);
-
-        instructions.emplace_back("JUMP", loopStart - instructions.size(), true);
-
-        long long loopEnd = instructions.size();
-        instructions[skipLoopJump].argument = loopEnd - skipLoopJump;
-
-        maxMemoryPointer = std::max(maxMemoryPointer, memoryPointer);
-
-        memoryPointer -= 1;
-        deallocateIterator(*forToNode->pidentifier->name);
     }
 
     void generateForDownToNode(ForDownToNode *forToNode)
@@ -998,7 +1229,60 @@ public:
         allocateIterator(*forToNode->pidentifier->name);
         long long iterator = getIteratorAddress(*forToNode->pidentifier->name);
 
-        if (auto fromValue = dynamic_cast<IdentifierNode *>(forToNode->fromValue))
+        if (procedureCalls.back() != "main")
+        {
+            if (auto fromValue = dynamic_cast<IdentifierNode *>(forToNode->fromValue))
+            {
+                auto address = getProcedureIdentifierAddress(*fromValue->name);
+                auto it = iteratorMemoryMap.find(*fromValue->name);
+                if (fromValue->index || (address == 3 || address == 4))
+                {
+                    if (!fromValue->index)
+                    {
+                        throw std::runtime_error("Misuse of array variable: " + *fromValue->name);
+                    }
+                    else if (address == 3)
+                    {
+                        generateProcedureArrayAccess(fromValue);
+                        loadArrayValue(memoryPointer);
+                    }
+                    else if (address == 4)
+                    {
+                        generateProcedureArgumentsArrayAccess(fromValue);
+                        loadArrayValue(memoryPointer);
+                    }
+                    else
+                    {
+                        throw std::runtime_error("Undeclared array: " + *fromValue->name);
+                    }
+                }
+                else if (address == 1)
+                {
+                    address = getProcedureArgumentAddress(*fromValue->name);
+                    instructions.emplace_back("LOADI", address, true);
+                }
+                else if (address == 2)
+                {
+                    isInitialiazed(fromValue);
+                    address = getProcedureVariableAddress(*fromValue->name);
+                    instructions.emplace_back("LOAD", address, true);
+                }
+                else if (it != iteratorMemoryMap.end())
+                {
+                    long long address = getIteratorAddress(*fromValue->name);
+                    instructions.emplace_back("LOAD", address, true);
+                }
+                else
+                {
+                    throw std::runtime_error("Undeclared variable: " + *fromValue->name);
+                }
+            }
+            else if (auto valueNode = dynamic_cast<ValueNode *>(forToNode->fromValue))
+            {
+                instructions.emplace_back("SET", valueNode->value, true);
+            }
+        }
+        else if (auto fromValue = dynamic_cast<IdentifierNode *>(forToNode->fromValue))
         {
             auto it = iteratorMemoryMap.find(*fromValue->name);
             if (fromValue->index)
@@ -1013,6 +1297,7 @@ public:
             }
             else
             {
+                isInitialiazed(fromValue);
                 long long address = getVariableMemoryAddress(*fromValue->name);
                 instructions.emplace_back("LOAD", address, true);
             }
@@ -1024,7 +1309,60 @@ public:
 
         instructions.emplace_back("STORE", iterator, true);
 
-        if (auto toValue = dynamic_cast<IdentifierNode *>(forToNode->toValue))
+        if (procedureCalls.back() != "main")
+        {
+            if (auto rightVar = dynamic_cast<IdentifierNode *>(forToNode->toValue))
+            {
+                auto address = getProcedureIdentifierAddress(*rightVar->name);
+                auto it = iteratorMemoryMap.find(*rightVar->name);
+                if (rightVar->index || (address == 3 || address == 4))
+                {
+                    if (!rightVar->index)
+                    {
+                        throw std::runtime_error("Misuse of array variable: " + *rightVar->name);
+                    }
+                    else if (address == 3)
+                    {
+                        generateProcedureArrayAccess(rightVar);
+                        loadArrayValue(memoryPointer);
+                    }
+                    else if (address == 4)
+                    {
+                        generateProcedureArgumentsArrayAccess(rightVar);
+                        loadArrayValue(memoryPointer);
+                    }
+                    else
+                    {
+                        throw std::runtime_error("Undeclared array: " + *rightVar->name);
+                    }
+                }
+                else if (address == 1)
+                {
+                    address = getProcedureArgumentAddress(*rightVar->name);
+                    instructions.emplace_back("LOADI", address, true);
+                }
+                else if (address == 2)
+                {
+                    isInitialiazed(rightVar);
+                    address = getProcedureVariableAddress(*rightVar->name);
+                    instructions.emplace_back("LOAD", address, true);
+                }
+                else if (it != iteratorMemoryMap.end())
+                {
+                    long long address = getIteratorAddress(*rightVar->name);
+                    instructions.emplace_back("LOAD", address, true);
+                }
+                else
+                {
+                    throw std::runtime_error("Undeclared variable: " + *rightVar->name);
+                }
+            }
+            else if (auto valueNode = dynamic_cast<ValueNode *>(forToNode->toValue))
+            {
+                instructions.emplace_back("SET", valueNode->value, true);
+            }
+        }
+        else if (auto toValue = dynamic_cast<IdentifierNode *>(forToNode->toValue))
         {
             auto it = iteratorMemoryMap.find(*toValue->name);
             if (toValue->index)
@@ -1039,6 +1377,7 @@ public:
             }
             else
             {
+                isInitialiazed(toValue);
                 long long address = getVariableMemoryAddress(*toValue->name);
                 instructions.emplace_back("LOAD", address, true);
             }
@@ -1076,77 +1415,150 @@ public:
 
     void generateReadCommand(ReadNode *readNode)
     {
-        if (!readNode || !readNode->identifier)
-            return;
-
-        auto *identifier = readNode->identifier;
-        auto it = iteratorMemoryMap.find(*identifier->name);
-
-        if (procedureCalls.back() != "main")
+        try
         {
-            if (auto variable = dynamic_cast<IdentifierNode *>(identifier))
+            if (!readNode || !readNode->identifier)
+                return;
+
+            auto *identifier = readNode->identifier;
+            auto it = iteratorMemoryMap.find(*identifier->name);
+
+            if (procedureCalls.back() != "main")
             {
-                std::cout << "READ: " << procedureCalls.back() << std::endl;
-                auto address = getProcedureIdentifierAddress(*variable->name);
-                if (address == 1)
+                if (auto variable = dynamic_cast<IdentifierNode *>(identifier))
                 {
-                    address = getProcedureArgumentAddress(*variable->name);
-                    instructions.emplace_back("GET", 0, true);
-                    instructions.emplace_back("STOREI", address, true);
-                }
-                else if (address == 2)
-                {
-                    address = getProcedureVariableAddress(*variable->name);
-                    instructions.emplace_back("GET", address, true);
-                }
-                else if (address == 3)
-                {
-                    maxMemoryPointer = std::max(maxMemoryPointer, memoryPointer);
-                    generateProcedureArrayAccess(variable);
-                    instructions.emplace_back("GET", 0, true);
-                    storeArrayValue(memoryPointer);
-                }
-                else if (address == 4)
-                {
-                    maxMemoryPointer = std::max(maxMemoryPointer, memoryPointer);
-                    generateProcedureArgumentsArrayAccess(variable);
-                    instructions.emplace_back("GET", 0, true);
-                    storeArrayValue(memoryPointer);
+                    auto address = getProcedureIdentifierAddress(*variable->name);
+
+                    if (variable->index || (address == 3 || address == 4))
+                    {
+                        if (!variable->index)
+                        {
+                            throw std::runtime_error("Misuse of array variable: " + *variable->name);
+                        }
+                        else if (address == 3)
+                        {
+                            maxMemoryPointer = std::max(maxMemoryPointer, memoryPointer);
+                            generateProcedureArrayAccess(variable);
+                            instructions.emplace_back("GET", 0, true);
+                            storeArrayValue(memoryPointer);
+                        }
+                        else if (address == 4)
+                        {
+                            maxMemoryPointer = std::max(maxMemoryPointer, memoryPointer);
+                            generateProcedureArgumentsArrayAccess(variable);
+                            instructions.emplace_back("GET", 0, true);
+                            storeArrayValue(memoryPointer);
+                        }
+                        else
+                        {
+                            throw std::runtime_error("Undeclared array: " + *variable->name);
+                        }
+                    }
+                    else if (address == 1)
+                    {
+                        address = getProcedureArgumentAddress(*variable->name);
+                        instructions.emplace_back("GET", 0, true);
+                        instructions.emplace_back("STOREI", address, true);
+                    }
+                    else if (address == 2)
+                    {
+                        address = getProcedureVariableAddress(*variable->name);
+                        instructions.emplace_back("GET", address, true);
+                    }
+                    else if (it != iteratorMemoryMap.end())
+                    {
+                        throw std::runtime_error("Cannot read value into iterator identifier: " + *variable->name);
+                    }
+                    else
+                    {
+                        throw std::runtime_error("Undeclared variable: " + *variable->name);
+                    }
                 }
             }
+            else if (identifier->index)
+            {
+                generateArrayAccess(identifier);
+                instructions.emplace_back("GET", 0, true);
+                storeArrayValue(memoryPointer);
+            }
+            else if (it != iteratorMemoryMap.end())
+            {
+                long long address = getIteratorAddress(*identifier->name);
+                instructions.emplace_back("GET", address, true);
+            }
+            else
+            {
+                long long address = getVariableMemoryAddress(*identifier->name);
+                instructions.emplace_back("GET", address, true);
+            }
+            initializeVariable(*readNode->identifier->name);
         }
-        else if (identifier->index)
+        catch (const CodeGeneratorError &e)
         {
-            generateArrayAccess(identifier);
-            instructions.emplace_back("GET", 0, true);
-            storeArrayValue(memoryPointer);
+            throw;
         }
-        else if (it != iteratorMemoryMap.end())
+        catch (const std::runtime_error &e)
         {
-            long long address = getIteratorAddress(*identifier->name);
-            instructions.emplace_back("GET", address, true);
+            throw CodeGeneratorError(e.what(), readNode->getLineNumber());
         }
-        else
-        {
-            long long address = getVariableMemoryAddress(*identifier->name);
-            instructions.emplace_back("GET", address, true);
-        }
-        // if (identifier->index)
-        // {
-        //     generateArrayAccess(identifier);
-        //     instructions.emplace_back("GET", 0, true);
-        //     storeArrayValue(memoryPointer);
-        // }
-        // else
-        // {
-        //     long long address = getVariableMemoryAddress(*identifier->name);
-        //     instructions.emplace_back("GET", address, true);
-        // }
     }
 
     void generateCondition(ConditionNode *condition)
     {
-        if (auto leftVar = dynamic_cast<IdentifierNode *>(condition->leftValue))
+        if (procedureCalls.back() != "main")
+        {
+            if (auto leftVar = dynamic_cast<IdentifierNode *>(condition->leftValue))
+            {
+                auto address = getProcedureIdentifierAddress(*leftVar->name);
+                auto it = iteratorMemoryMap.find(*leftVar->name);
+                if (leftVar->index || (address == 3 || address == 4))
+                {
+                    if (!leftVar->index)
+                    {
+                        throw std::runtime_error("Misuse of array variable: " + *leftVar->name);
+                    }
+                    else if (address == 3)
+                    {
+                        generateProcedureArrayAccess(leftVar);
+                        loadArrayValue(memoryPointer);
+                    }
+                    else if (address == 4)
+                    {
+                        generateProcedureArgumentsArrayAccess(leftVar);
+                        loadArrayValue(memoryPointer);
+                    }
+                    else
+                    {
+                        throw std::runtime_error("Undeclared array: " + *leftVar->name);
+                    }
+                }
+                else if (address == 1)
+                {
+                    address = getProcedureArgumentAddress(*leftVar->name);
+                    instructions.emplace_back("LOADI", address, true);
+                }
+                else if (address == 2)
+                {
+                    isInitialiazed(leftVar);
+                    address = getProcedureVariableAddress(*leftVar->name);
+                    instructions.emplace_back("LOAD", address, true);
+                }
+                else if (it != iteratorMemoryMap.end())
+                {
+                    long long address = getIteratorAddress(*leftVar->name);
+                    instructions.emplace_back("LOAD", address, true);
+                }
+                else
+                {
+                    throw std::runtime_error("Undeclared variable: " + *leftVar->name);
+                }
+            }
+            else if (auto valueNode = dynamic_cast<ValueNode *>(condition->leftValue))
+            {
+                instructions.emplace_back("SET", valueNode->value, true);
+            }
+        }
+        else if (auto leftVar = dynamic_cast<IdentifierNode *>(condition->leftValue))
         {
             auto it = iteratorMemoryMap.find(*leftVar->name);
             if (leftVar->index)
@@ -1161,6 +1573,7 @@ public:
             }
             else
             {
+                isInitialiazed(leftVar);
                 long long address = getVariableMemoryAddress(*leftVar->name);
                 instructions.emplace_back("LOAD", address, true);
             }
@@ -1170,28 +1583,63 @@ public:
             instructions.emplace_back("SET", valueNode->value, true);
         }
 
-        // if (auto leftVar = dynamic_cast<IdentifierNode *>(condition->leftValue))
-        // {
-        //     if (leftVar->index)
-        //     {
-        //         generateArrayAccess(leftVar);
-        //         loadArrayValue(memoryPointer);
-        //     }
-        //     else
-        //     {
-        //         long long address = getVariableMemoryAddress(*leftVar->name);
-        //         instructions.emplace_back("LOAD", address, true);
-        //     }
-        // }
-        // else if (auto valueNode = dynamic_cast<ValueNode *>(condition->leftValue))
-        // {
-        //     instructions.emplace_back("SET", valueNode->value, true);
-        // }
-
         instructions.emplace_back("STORE", memoryPointer, true);
         long long leftTemp = memoryPointer++;
 
-        if (auto rightVar = dynamic_cast<IdentifierNode *>(condition->rightValue))
+        if (procedureCalls.back() != "main")
+        {
+            if (auto rightVar = dynamic_cast<IdentifierNode *>(condition->rightValue))
+            {
+                auto address = getProcedureIdentifierAddress(*rightVar->name);
+                auto it = iteratorMemoryMap.find(*rightVar->name);
+                if (rightVar->index || (address == 3 || address == 4))
+                {
+                    if (!rightVar->index)
+                    {
+                        throw std::runtime_error("Misuse of array variable: " + *rightVar->name);
+                    }
+                    else if (address == 3)
+                    {
+                        generateProcedureArrayAccess(rightVar);
+                        loadArrayValue(memoryPointer);
+                    }
+                    else if (address == 4)
+                    {
+                        generateProcedureArgumentsArrayAccess(rightVar);
+                        loadArrayValue(memoryPointer);
+                    }
+                    else
+                    {
+                        throw std::runtime_error("Undeclared array: " + *rightVar->name);
+                    }
+                }
+                else if (address == 1)
+                {
+                    address = getProcedureArgumentAddress(*rightVar->name);
+                    instructions.emplace_back("LOADI", address, true);
+                }
+                else if (address == 2)
+                {
+                    isInitialiazed(rightVar);
+                    address = getProcedureVariableAddress(*rightVar->name);
+                    instructions.emplace_back("LOAD", address, true);
+                }
+                else if (it != iteratorMemoryMap.end())
+                {
+                    long long address = getIteratorAddress(*rightVar->name);
+                    instructions.emplace_back("LOAD", address, true);
+                }
+                else
+                {
+                    throw std::runtime_error("Undeclared variable: " + *rightVar->name);
+                }
+            }
+            else if (auto valueNode = dynamic_cast<ValueNode *>(condition->rightValue))
+            {
+                instructions.emplace_back("SET", valueNode->value, true);
+            }
+        }
+        else if (auto rightVar = dynamic_cast<IdentifierNode *>(condition->rightValue))
         {
             auto it = iteratorMemoryMap.find(*rightVar->name);
             if (rightVar->index)
@@ -1206,6 +1654,7 @@ public:
             }
             else
             {
+                isInitialiazed(rightVar);
                 long long address = getVariableMemoryAddress(*rightVar->name);
                 instructions.emplace_back("LOAD", address, true);
             }
@@ -1214,24 +1663,6 @@ public:
         {
             instructions.emplace_back("SET", valueNode->value, true);
         }
-
-        // if (auto rightVar = dynamic_cast<IdentifierNode *>(condition->rightValue))
-        // {
-        //     if (rightVar->index)
-        //     {
-        //         generateArrayAccess(rightVar);
-        //         loadArrayValue(memoryPointer);
-        //     }
-        //     else
-        //     {
-        //         long long address = getVariableMemoryAddress(*rightVar->name);
-        //         instructions.emplace_back("LOAD", address, true);
-        //     }
-        // }
-        // else if (auto valueNode = dynamic_cast<ValueNode *>(condition->rightValue))
-        // {
-        //     instructions.emplace_back("SET", valueNode->value, true);
-        // }
 
         instructions.emplace_back("SUB", leftTemp, true);
 
@@ -1376,37 +1807,71 @@ public:
 
     void generateWriteCommand(WriteNode *writeNode)
     {
-        if (!writeNode || !writeNode->value)
-            return;
-
-        if (procedureCalls.back() != "main")
+        try
         {
-            if (auto variable = dynamic_cast<IdentifierNode *>(writeNode->value))
+            if (!writeNode || !writeNode->value)
+                return;
+
+            if (procedureCalls.back() != "main")
             {
-                auto address = getProcedureIdentifierAddress(*variable->name);
+                if (auto variable = dynamic_cast<IdentifierNode *>(writeNode->value))
+                {
+                    auto address = getProcedureIdentifierAddress(*variable->name);
+                    auto it = iteratorMemoryMap.find(*variable->name);
+                    if (variable->index || (address == 3 || address == 4))
+                    {
+                        if (!variable->index)
+                        {
+                            throw std::runtime_error("Misuse of array variable: " + *variable->name);
+                        }
+                        else if (address == 3)
+                        {
+                            maxMemoryPointer = std::max(maxMemoryPointer, memoryPointer);
+                            generateProcedureArrayAccess(variable);
+                            loadArrayValue(memoryPointer);
+                            instructions.emplace_back("PUT", 0, true);
+                        }
+                        else if (address == 4)
+                        {
+                            maxMemoryPointer = std::max(maxMemoryPointer, memoryPointer);
+                            generateProcedureArgumentsArrayAccess(variable);
+                            loadArrayValue(memoryPointer);
+                            instructions.emplace_back("PUT", 0, true);
+                        }
+                        else
+                        {
+                            throw std::runtime_error("Undeclared array: " + *variable->name);
+                        }
+                    }
+                    else if (address == 1)
+                    {
+                        address = getProcedureArgumentAddress(*variable->name);
+                        instructions.emplace_back("LOADI", address, true);
+                        instructions.emplace_back("PUT", 0, true);
+                    }
+                    else if (address == 2)
+                    {
+                        isInitialiazed(variable);
+                        address = getProcedureVariableAddress(*variable->name);
+                        instructions.emplace_back("PUT", address, true);
+                    }
+                    else if (it != iteratorMemoryMap.end())
+                    {
+                        long long address = getIteratorAddress(*variable->name);
+                        instructions.emplace_back("PUT", address, true);
+                    }
+                    else
+                    {
+                        throw std::runtime_error("Undefined variable : " + *variable->name);
+                    }
+                }
+            }
+            else if (auto variable = dynamic_cast<IdentifierNode *>(writeNode->value))
+            {
                 auto it = iteratorMemoryMap.find(*variable->name);
-                if (address == 1)
+                if (variable->index)
                 {
-                    address = getProcedureArgumentAddress(*variable->name);
-                    instructions.emplace_back("LOADI", address, true);
-                    instructions.emplace_back("PUT", 0, true);
-                }
-                else if (address == 2)
-                {
-                    address = getProcedureVariableAddress(*variable->name);
-                    instructions.emplace_back("PUT", address, true);
-                }
-                else if (address == 3)
-                {
-                    maxMemoryPointer = std::max(maxMemoryPointer, memoryPointer);
-                    generateProcedureArrayAccess(variable);
-                    loadArrayValue(memoryPointer);
-                    instructions.emplace_back("PUT", 0, true);
-                }
-                else if (address == 4)
-                {
-                    maxMemoryPointer = std::max(maxMemoryPointer, memoryPointer);
-                    generateProcedureArgumentsArrayAccess(variable);
+                    generateArrayAccess(variable);
                     loadArrayValue(memoryPointer);
                     instructions.emplace_back("PUT", 0, true);
                 }
@@ -1415,137 +1880,212 @@ public:
                     long long address = getIteratorAddress(*variable->name);
                     instructions.emplace_back("PUT", address, true);
                 }
+                else
+                {
+                    isInitialiazed(variable);
+                    long long address = getVariableMemoryAddress(*variable->name);
+                    instructions.emplace_back("PUT", address, true);
+                }
             }
-        }
-        else if (auto variable = dynamic_cast<IdentifierNode *>(writeNode->value))
-        {
-            auto it = iteratorMemoryMap.find(*variable->name);
-            if (variable->index)
+            else if (auto valueNode = dynamic_cast<ValueNode *>(writeNode->value))
             {
-                generateArrayAccess(variable);
-                loadArrayValue(memoryPointer);
+                instructions.emplace_back("SET", valueNode->value, true);
                 instructions.emplace_back("PUT", 0, true);
             }
-            else if (it != iteratorMemoryMap.end())
-            {
-                long long address = getIteratorAddress(*variable->name);
-                instructions.emplace_back("PUT", address, true);
-            }
-            else
-            {
-                long long address = getVariableMemoryAddress(*variable->name);
-                instructions.emplace_back("PUT", address, true);
-            }
         }
-        else if (auto valueNode = dynamic_cast<ValueNode *>(writeNode->value))
+        catch (const CodeGeneratorError &e)
         {
-            instructions.emplace_back("SET", valueNode->value, true);
-            instructions.emplace_back("PUT", 0, true);
+            throw;
+        }
+        catch (const std::runtime_error &e)
+        {
+            throw CodeGeneratorError(e.what(), writeNode->getLineNumber());
         }
     }
 
     void generateAssignCommand(AssignNode *assignNode)
     {
-        if (!assignNode || !assignNode->identifier || !assignNode->expression)
-            return;
-
-        if (procedureCalls.back() != "main")
+        try
         {
-            if (auto variable = dynamic_cast<IdentifierNode *>(assignNode->identifier))
+            if (procedureCalls.back() != "main")
             {
-                auto address = getProcedureIdentifierAddress(*variable->name);
-                std::cout << "ASSIGN " << *variable->name << std::endl;
-                if (address == 1)
+                if (auto variable = dynamic_cast<IdentifierNode *>(assignNode->identifier))
                 {
-                    generateExpression(assignNode->expression);
-                    address = getProcedureArgumentAddress(*variable->name);
-                    instructions.emplace_back("STOREI", address, true);
+                    auto it = iteratorMemoryMap.find(*variable->name);
+                    auto address = getProcedureIdentifierAddress(*variable->name);
+                    if (variable->index || (address == 3 || address == 4))
+                    {
+                        if (!variable->index)
+                        {
+                            throw std::runtime_error("Misuse of array variable: " + *variable->name);
+                        }
+                        else if (address == 3)
+                        {
+                            generateProcedureArrayAccess(variable);
+                            long long temp = memoryPointer++;
+                            generateExpression(assignNode->expression);
+                            storeArrayValue(temp);
+                            maxMemoryPointer = std::max(maxMemoryPointer, memoryPointer);
+
+                            memoryPointer--;
+                        }
+                        else if (address == 4)
+                        {
+                            generateProcedureArgumentsArrayAccess(variable);
+                            long long temp = memoryPointer++;
+                            generateExpression(assignNode->expression);
+                            storeArrayValue(temp);
+                            maxMemoryPointer = std::max(maxMemoryPointer, memoryPointer);
+
+                            memoryPointer--;
+                        }
+                        else
+                        {
+                            throw std::runtime_error("Undeclared array: " + *variable->name);
+                        }
+                    }
+                    else if (address == 1)
+                    {
+                        generateExpression(assignNode->expression);
+                        address = getProcedureArgumentAddress(*variable->name);
+                        instructions.emplace_back("STOREI", address, true);
+                    }
+                    else if (address == 2)
+                    {
+                        generateExpression(assignNode->expression);
+                        address = getProcedureVariableAddress(*variable->name);
+                        instructions.emplace_back("STORE", address, true);
+                    }
+                    else if (it != iteratorMemoryMap.end())
+                    {
+                        throw std::runtime_error("Cannot assign value to iterator: " + *variable->name);
+                    }
+                    else
+                    {
+                        throw std::runtime_error("Undefined variable : " + *variable->name);
+                    }
                 }
-                else if (address == 2)
+            }
+            else if (auto variable = dynamic_cast<IdentifierNode *>(assignNode->identifier))
+            {
+                auto it = iteratorMemoryMap.find(*variable->name);
+                if (variable->index)
+                {
+                    generateArrayAccess(variable);
+                    long long temp = memoryPointer++;
+                    generateExpression(assignNode->expression);
+                    storeArrayValue(temp);
+                    maxMemoryPointer = std::max(maxMemoryPointer, memoryPointer);
+
+                    memoryPointer--;
+                }
+                else if (it != iteratorMemoryMap.end())
+                {
+                    throw std::runtime_error("Cannot assign value to iterator: " + *variable->name);
+                }
+                else
                 {
                     generateExpression(assignNode->expression);
-                    address = getProcedureVariableAddress(*variable->name);
+                    long long address = getVariableMemoryAddress(*variable->name);
                     instructions.emplace_back("STORE", address, true);
                 }
-                else if (address == 3)
-                {
-                    generateProcedureArrayAccess(variable);
-                    long long temp = memoryPointer++;
-                    generateExpression(assignNode->expression);
-                    storeArrayValue(temp);
-                    maxMemoryPointer = std::max(maxMemoryPointer, memoryPointer);
-
-                    memoryPointer--;
-                }
-                else if (address == 4)
-                {
-                    generateProcedureArgumentsArrayAccess(variable);
-                    long long temp = memoryPointer++;
-                    generateExpression(assignNode->expression);
-                    storeArrayValue(temp);
-                    maxMemoryPointer = std::max(maxMemoryPointer, memoryPointer);
-
-                    memoryPointer--;
-                }
             }
+            initializeVariable(*assignNode->identifier->name);
         }
-        else if (auto variable = dynamic_cast<IdentifierNode *>(assignNode->identifier))
+        catch (const CodeGeneratorError &e)
         {
-            auto it = iteratorMemoryMap.find(*variable->name);
-            if (variable->index)
-            {
-                generateArrayAccess(variable);
-                long long temp = memoryPointer++;
-                generateExpression(assignNode->expression);
-                storeArrayValue(temp);
-                maxMemoryPointer = std::max(maxMemoryPointer, memoryPointer);
-
-                memoryPointer--;
-            }
-            else if (it != iteratorMemoryMap.end())
-            {
-                throw std::runtime_error("Cannot assign value to iterator: " + *variable->name);
-            }
-            else
-            {
-                generateExpression(assignNode->expression);
-                long long address = getVariableMemoryAddress(*variable->name);
-                instructions.emplace_back("STORE", address, true);
-            }
+            throw;
+        }
+        catch (const std::runtime_error &e)
+        {
+            throw CodeGeneratorError(e.what(), assignNode->getLineNumber());
         }
     }
 
     void generateExpression(ExpressionNode *expression)
     {
-        if (auto binaryExpr = dynamic_cast<BinaryExpressionNode *>(expression))
+        try
         {
-            bool isLeftArray = false;
-            if (procedureCalls.back() != "main")
+            if (auto binaryExpr = dynamic_cast<BinaryExpressionNode *>(expression))
             {
-                if (auto leftVar = dynamic_cast<IdentifierNode *>(binaryExpr->left))
+                bool isLeftArray = false;
+                if (procedureCalls.back() != "main")
                 {
-                    auto address = getProcedureIdentifierAddress(*leftVar->name);
-                    if (address == 1)
+                    if (auto leftVar = dynamic_cast<IdentifierNode *>(binaryExpr->left))
                     {
-                        address = getProcedureArgumentAddress(*leftVar->name);
-                        instructions.emplace_back("LOADI", address, true);
+                        auto address = getProcedureIdentifierAddress(*leftVar->name);
+                        auto it = iteratorMemoryMap.find(*leftVar->name);
+                        if (leftVar->index || (address == 3 || address == 4))
+                        {
+                            if (!leftVar->index)
+                            {
+                                throw std::runtime_error("Misuse of array variable: " + *leftVar->name);
+                            }
+                            else if (address == 3)
+                            {
+                                generateProcedureArrayAccess(leftVar);
+                                isLeftArray = true;
+                            }
+                            else if (address == 4)
+                            {
+                                generateProcedureArgumentsArrayAccess(leftVar);
+                                isLeftArray = true;
+                            }
+                            else
+                            {
+                                throw std::runtime_error("Undeclared array: " + *leftVar->name);
+                            }
+                        }
+                        else if (address == 1)
+                        {
+                            address = getProcedureArgumentAddress(*leftVar->name);
+                            instructions.emplace_back("LOADI", address, true);
+                            instructions.emplace_back("STORE", memoryPointer, true);
+                        }
+                        else if (address == 2)
+                        {
+                            isInitialiazed(leftVar);
+                            address = getProcedureVariableAddress(*leftVar->name);
+                            instructions.emplace_back("LOAD", address, true);
+                            instructions.emplace_back("STORE", memoryPointer, true);
+                        }
+                        else if (it != iteratorMemoryMap.end())
+                        {
+                            long long address = getIteratorAddress(*leftVar->name);
+                            instructions.emplace_back("LOAD", address, true);
+                            instructions.emplace_back("STORE", memoryPointer, true);
+                        }
+                        else
+                        {
+                            throw std::runtime_error("Undefined variable : " + *leftVar->name);
+                        }
+                    }
+                    else if (auto valueNode = dynamic_cast<ValueNode *>(binaryExpr->left))
+                    {
+                        instructions.emplace_back("SET", valueNode->value, true);
                         instructions.emplace_back("STORE", memoryPointer, true);
                     }
-                    else if (address == 2)
+                }
+                else if (auto leftVar = dynamic_cast<IdentifierNode *>(binaryExpr->left))
+                {
+                    auto it = iteratorMemoryMap.find(*leftVar->name);
+                    if (leftVar->index)
                     {
-                        address = getProcedureVariableAddress(*leftVar->name);
+                        generateArrayAccess(leftVar);
+                        isLeftArray = true;
+                    }
+                    else if (it != iteratorMemoryMap.end())
+                    {
+                        long long address = getIteratorAddress(*leftVar->name);
                         instructions.emplace_back("LOAD", address, true);
                         instructions.emplace_back("STORE", memoryPointer, true);
                     }
-                    else if (address == 3)
+                    else
                     {
-                        generateProcedureArrayAccess(leftVar);
-                        isLeftArray = true;
-                    }
-                    else if (address == 4)
-                    {
-                        generateProcedureArgumentsArrayAccess(leftVar);
-                        isLeftArray = true;
+                        isInitialiazed(leftVar);
+                        long long address = getVariableMemoryAddress(*leftVar->name);
+                        instructions.emplace_back("LOAD", address, true);
+                        instructions.emplace_back("STORE", memoryPointer, true);
                     }
                 }
                 else if (auto valueNode = dynamic_cast<ValueNode *>(binaryExpr->left))
@@ -1553,63 +2093,87 @@ public:
                     instructions.emplace_back("SET", valueNode->value, true);
                     instructions.emplace_back("STORE", memoryPointer, true);
                 }
-            }
-            else if (auto leftVar = dynamic_cast<IdentifierNode *>(binaryExpr->left))
-            {
-                auto it = iteratorMemoryMap.find(*leftVar->name);
-                if (leftVar->index)
-                {
-                    generateArrayAccess(leftVar);
-                    isLeftArray = true;
-                }
-                else if (it != iteratorMemoryMap.end())
-                {
-                    long long address = getIteratorAddress(*leftVar->name);
-                    instructions.emplace_back("LOAD", address, true);
-                    instructions.emplace_back("STORE", memoryPointer, true);
-                }
-                else
-                {
-                    long long address = getVariableMemoryAddress(*leftVar->name);
-                    instructions.emplace_back("LOAD", address, true);
-                    instructions.emplace_back("STORE", memoryPointer, true);
-                }
-            }
-            else if (auto valueNode = dynamic_cast<ValueNode *>(binaryExpr->left))
-            {
-                instructions.emplace_back("SET", valueNode->value, true);
-                instructions.emplace_back("STORE", memoryPointer, true);
-            }
 
-            long long leftTemp = memoryPointer++;
+                long long leftTemp = memoryPointer++;
 
-            bool isRightArray = false;
-            if (procedureCalls.back() != "main")
-            {
-                if (auto rightVar = dynamic_cast<IdentifierNode *>(binaryExpr->right))
+                bool isRightArray = false;
+                if (procedureCalls.back() != "main")
                 {
-                    auto address = getProcedureIdentifierAddress(*rightVar->name);
-                    if (address == 1)
+                    if (auto rightVar = dynamic_cast<IdentifierNode *>(binaryExpr->right))
                     {
-                        address = getProcedureArgumentAddress(*rightVar->name);
-                        instructions.emplace_back("LOADI", address, true);
+                        auto address = getProcedureIdentifierAddress(*rightVar->name);
+                        auto it = iteratorMemoryMap.find(*rightVar->name);
+                        if (rightVar->index || (address == 3 || address == 4))
+                        {
+                            if (!rightVar->index)
+                            {
+                                throw std::runtime_error("Misuse of array variable: " + *rightVar->name);
+                            }
+                            else if (address == 3)
+                            {
+                                generateProcedureArrayAccess(rightVar);
+                                isRightArray = true;
+                            }
+                            else if (address == 4)
+                            {
+                                generateProcedureArgumentsArrayAccess(rightVar);
+                                isRightArray = true;
+                            }
+                            else
+                            {
+                                throw std::runtime_error("Undeclared array: " + *rightVar->name);
+                            }
+                        }
+                        else if (address == 1)
+                        {
+                            address = getProcedureArgumentAddress(*rightVar->name);
+                            instructions.emplace_back("LOADI", address, true);
+                            instructions.emplace_back("STORE", memoryPointer, true);
+                        }
+                        else if (address == 2)
+                        {
+                            isInitialiazed(rightVar);
+                            address = getProcedureVariableAddress(*rightVar->name);
+                            instructions.emplace_back("LOAD", address, true);
+                            instructions.emplace_back("STORE", memoryPointer, true);
+                        }
+                        else if (it != iteratorMemoryMap.end())
+                        {
+                            long long address = getIteratorAddress(*rightVar->name);
+                            instructions.emplace_back("LOAD", address, true);
+                            instructions.emplace_back("STORE", memoryPointer, true);
+                        }
+                        else
+                        {
+                            throw std::runtime_error("Undefined variable : " + *rightVar->name);
+                        }
+                    }
+                    else if (auto valueNode = dynamic_cast<ValueNode *>(binaryExpr->right))
+                    {
+                        instructions.emplace_back("SET", valueNode->value, true);
                         instructions.emplace_back("STORE", memoryPointer, true);
                     }
-                    else if (address == 2)
+                }
+                else if (auto rightVar = dynamic_cast<IdentifierNode *>(binaryExpr->right))
+                {
+                    auto it = iteratorMemoryMap.find(*rightVar->name);
+                    if (rightVar->index)
                     {
-                        address = getProcedureVariableAddress(*rightVar->name);
+                        generateArrayAccess(rightVar);
+                        isRightArray = true;
+                    }
+                    else if (it != iteratorMemoryMap.end())
+                    {
+                        long long address = getIteratorAddress(*rightVar->name);
                         instructions.emplace_back("LOAD", address, true);
                         instructions.emplace_back("STORE", memoryPointer, true);
                     }
-                    else if (address == 3)
+                    else
                     {
-                        generateProcedureArrayAccess(rightVar);
-                        isRightArray = true;
-                    }
-                    else if (address == 4)
-                    {
-                        generateProcedureArgumentsArrayAccess(rightVar);
-                        isRightArray = true;
+                        isInitialiazed(rightVar);
+                        long long address = getVariableMemoryAddress(*rightVar->name);
+                        instructions.emplace_back("LOAD", address, true);
+                        instructions.emplace_back("STORE", memoryPointer, true);
                     }
                 }
                 else if (auto valueNode = dynamic_cast<ValueNode *>(binaryExpr->right))
@@ -1617,225 +2181,275 @@ public:
                     instructions.emplace_back("SET", valueNode->value, true);
                     instructions.emplace_back("STORE", memoryPointer, true);
                 }
-            }
-            else if (auto rightVar = dynamic_cast<IdentifierNode *>(binaryExpr->right))
-            {
-                auto it = iteratorMemoryMap.find(*rightVar->name);
-                if (rightVar->index)
+
+                long long rightTemp = memoryPointer++;
+
+                if (binaryExpr->operation == "+")
                 {
-                    generateArrayAccess(rightVar);
-                    isRightArray = true;
+                    if (isLeftArray && isRightArray)
+                    {
+                        loadArrayValue(leftTemp);
+                        instructions.emplace_back("ADDI", rightTemp, true);
+                    }
+                    else if (isLeftArray)
+                    {
+                        loadArrayValue(leftTemp);
+                        instructions.emplace_back("ADD", rightTemp, true);
+                    }
+                    else if (isRightArray)
+                    {
+                        loadArrayValue(rightTemp);
+                        instructions.emplace_back("ADD", leftTemp, true);
+                    }
+                    else
+                    {
+                        instructions.emplace_back("ADD", leftTemp, true);
+                    }
+
+                    // instructions.emplace_back("LOAD", leftTemp, true);
+                    // instructions.emplace_back("ADD", rightTemp, true);
+                    maxMemoryPointer = std::max(maxMemoryPointer, memoryPointer);
+
+                    memoryPointer -= 2;
+                }
+                else if (binaryExpr->operation == "-")
+                {
+                    if (isLeftArray && isRightArray)
+                    {
+                        loadArrayValue(leftTemp);
+                        instructions.emplace_back("SUBI", rightTemp, true);
+                    }
+                    else if (isLeftArray)
+                    {
+                        loadArrayValue(leftTemp);
+                        instructions.emplace_back("SUB", rightTemp, true);
+                    }
+                    else if (isRightArray)
+                    {
+                        instructions.emplace_back("LOAD", leftTemp, true);
+                        instructions.emplace_back("SUBI", rightTemp, true);
+                    }
+                    else
+                    {
+                        instructions.emplace_back("LOAD", leftTemp, true);
+                        instructions.emplace_back("SUB", rightTemp, true);
+                    }
+                    maxMemoryPointer = std::max(maxMemoryPointer, memoryPointer);
+
+                    memoryPointer -= 2;
+                }
+                else if (binaryExpr->operation == "*")
+                {
+                    long long leftValue, rightValue;
+                    handleArrayValues(isLeftArray, isRightArray, leftTemp, rightTemp, leftValue, rightValue);
+
+                    long long resultTemp, signTemp;
+                    initializeResultAndSign(resultTemp, signTemp);
+
+                    handleOperandSign(leftValue, signTemp, true);
+                    handleOperandSign(rightValue, signTemp, false);
+
+                    performMultiplication(leftValue, rightValue, resultTemp);
+                    applySign(resultTemp, signTemp);
+
+                    maxMemoryPointer = std::max(maxMemoryPointer, memoryPointer);
+
+                    memoryPointer -= 4;
+                    if (isLeftArray)
+                        memoryPointer--;
+                    if (isRightArray)
+                        memoryPointer--;
+                }
+                else if (binaryExpr->operation == "/")
+                {
+                    long long leftValue, rightValue;
+                    handleArrayValues(isLeftArray, isRightArray, leftTemp, rightTemp, leftValue, rightValue);
+
+                    instructions.emplace_back("LOAD", rightValue, true);
+                    instructions.emplace_back("JZERO", 38, true);
+
+                    long long resultTemp, signTemp;
+                    initializeResultAndSign(resultTemp, signTemp);
+
+                    handleOperandSign(leftValue, signTemp, true);
+                    handleOperandSign(rightValue, signTemp, false);
+
+                    performDivision(leftValue, rightValue, resultTemp);
+                    applySign(resultTemp, signTemp);
+
+                    maxMemoryPointer = std::max(maxMemoryPointer, memoryPointer);
+
+                    memoryPointer -= 6;
+                    if (isLeftArray)
+                        memoryPointer--;
+                    if (isRightArray)
+                        memoryPointer--;
+                }
+                else if (binaryExpr->operation == "%")
+                {
+                    long long leftValue, rightValue;
+                    handleArrayValues(isLeftArray, isRightArray, leftTemp, rightTemp, leftValue, rightValue);
+
+                    instructions.emplace_back("LOAD", rightValue, true);
+                    instructions.emplace_back("JZERO", 55, true);
+
+                    instructions.emplace_back("LOAD", leftValue, true);
+                    instructions.emplace_back("JZERO", 53, true);
+
+                    instructions.emplace_back("SET", 0, true);
+                    instructions.emplace_back("SUB", leftValue, true);
+                    instructions.emplace_back("JPOS", 4, true);
+
+                    instructions.emplace_back("SET", 1, true);
+                    instructions.emplace_back("STORE", memoryPointer, true);
+                    instructions.emplace_back("JUMP", 4, true);
+
+                    instructions.emplace_back("STORE", leftValue, true);
+                    instructions.emplace_back("SET", -1, true);
+                    instructions.emplace_back("STORE", memoryPointer, true);
+                    long long leftSign = memoryPointer++;
+
+                    instructions.emplace_back("SET", 0, true);
+                    instructions.emplace_back("SUB", rightValue, true);
+                    instructions.emplace_back("JPOS", 4, true);
+
+                    instructions.emplace_back("SET", 1, true);
+                    instructions.emplace_back("STORE", memoryPointer, true);
+                    instructions.emplace_back("JUMP", 4, true);
+
+                    instructions.emplace_back("STORE", rightValue, true);
+                    instructions.emplace_back("SET", -1, true);
+                    instructions.emplace_back("STORE", memoryPointer, true);
+                    long long rightSign = memoryPointer++;
+
+                    instructions.emplace_back("LOAD", rightValue, true);
+                    instructions.emplace_back("STORE", memoryPointer, true);
+                    long long currentDivisor = memoryPointer++;
+
+                    instructions.emplace_back("LOAD", leftValue, true);
+                    instructions.emplace_back("SUB", rightValue, true);
+                    instructions.emplace_back("JNEG", 17, true);
+
+                    instructions.emplace_back("LOAD", leftValue, true);
+                    instructions.emplace_back("SUB", currentDivisor, true);
+                    instructions.emplace_back("JNEG", 5, true);
+
+                    instructions.emplace_back("LOAD", currentDivisor, true);
+                    instructions.emplace_back("ADD", currentDivisor, true);
+                    instructions.emplace_back("STORE", currentDivisor, true);
+
+                    instructions.emplace_back("JUMP", -6, true);
+
+                    instructions.emplace_back("LOAD", currentDivisor, true);
+                    instructions.emplace_back("HALF", 0, false);
+                    instructions.emplace_back("STORE", currentDivisor, true);
+
+                    instructions.emplace_back("LOAD", leftValue, true);
+                    instructions.emplace_back("SUB", currentDivisor, true);
+                    instructions.emplace_back("STORE", leftValue, true);
+
+                    instructions.emplace_back("LOAD", rightValue, true);
+                    instructions.emplace_back("STORE", currentDivisor, true);
+
+                    instructions.emplace_back("JUMP", -18, true);
+
+                    instructions.emplace_back("LOAD", leftValue, true);
+                    instructions.emplace_back("JZERO", 12, true);
+
+                    instructions.emplace_back("LOAD", leftSign, true);
+                    instructions.emplace_back("JPOS", 4, true);
+                    instructions.emplace_back("LOAD", rightValue, true);
+                    instructions.emplace_back("SUB", leftValue, true);
+                    instructions.emplace_back("STORE", leftValue, true);
+
+                    instructions.emplace_back("LOAD", rightSign, true);
+                    instructions.emplace_back("JPOS", 4, true);
+                    instructions.emplace_back("LOAD", leftValue, true);
+                    instructions.emplace_back("SUB", rightValue, true);
+                    instructions.emplace_back("STORE", leftValue, true);
+
+                    instructions.emplace_back("LOAD", leftValue, true);
+
+                    maxMemoryPointer = std::max(maxMemoryPointer, memoryPointer);
+
+                    memoryPointer -= 5;
+                    if (isLeftArray)
+                        memoryPointer--;
+                    if (isRightArray)
+                        memoryPointer--;
+                }
+            }
+            else if (procedureCalls.back() != "main")
+            {
+                if (auto variable = dynamic_cast<IdentifierNode *>(expression))
+                {
+                    auto it = iteratorMemoryMap.find(*variable->name);
+                    auto address = getProcedureIdentifierAddress(*variable->name);
+                    if (variable->index || (address == 3 || address == 4))
+                    {
+                        if (!variable->index)
+                        {
+                            throw std::runtime_error("Misuse of array variable: " + *variable->name);
+                        }
+                        else if (address == 3)
+                        {
+                            generateProcedureArrayAccess(variable);
+                            loadArrayValue(memoryPointer);
+                        }
+                        else if (address == 4)
+                        {
+                            generateProcedureArgumentsArrayAccess(variable);
+                            loadArrayValue(memoryPointer);
+                        }
+                        else
+                        {
+                            throw std::runtime_error("Undeclared array: " + *variable->name);
+                        }
+                    }
+                    else if (address == 1)
+                    {
+                        address = getProcedureArgumentAddress(*variable->name);
+                        instructions.emplace_back("LOADI", address, true);
+                    }
+                    else if (address == 2)
+                    {
+                        isInitialiazed(variable);
+                        address = getProcedureVariableAddress(*variable->name);
+                        instructions.emplace_back("LOAD", address, true);
+                    }
+                    else if (it != iteratorMemoryMap.end())
+                    {
+                        long long address = getIteratorAddress(*variable->name);
+                        instructions.emplace_back("LOAD", address, true);
+                    }
+                    else
+                    {
+                        throw std::runtime_error("Undefined variable : " + *variable->name);
+                    }
+                }
+                else if (auto valueNode = dynamic_cast<ValueNode *>(expression))
+                {
+                    instructions.emplace_back("SET", valueNode->value, true);
+                }
+            }
+            else if (auto variable = dynamic_cast<IdentifierNode *>(expression))
+            {
+                auto it = iteratorMemoryMap.find(*variable->name);
+                if (variable->index)
+                {
+                    generateArrayAccess(variable);
+                    loadArrayValue(memoryPointer);
                 }
                 else if (it != iteratorMemoryMap.end())
                 {
-                    long long address = getIteratorAddress(*rightVar->name);
+                    long long address = getIteratorAddress(*variable->name);
                     instructions.emplace_back("LOAD", address, true);
-                    instructions.emplace_back("STORE", memoryPointer, true);
                 }
                 else
                 {
-                    long long address = getVariableMemoryAddress(*rightVar->name);
+                    isInitialiazed(variable);
+                    long long address = getVariableMemoryAddress(*variable->name);
                     instructions.emplace_back("LOAD", address, true);
-                    instructions.emplace_back("STORE", memoryPointer, true);
-                }
-            }
-            else if (auto valueNode = dynamic_cast<ValueNode *>(binaryExpr->right))
-            {
-                instructions.emplace_back("SET", valueNode->value, true);
-                instructions.emplace_back("STORE", memoryPointer, true);
-            }
-
-            long long rightTemp = memoryPointer++;
-
-            if (binaryExpr->operation == "+")
-            {
-                if (isLeftArray && isRightArray)
-                {
-                    loadArrayValue(leftTemp);
-                    instructions.emplace_back("ADDI", rightTemp, true);
-                }
-                else if (isLeftArray)
-                {
-                    loadArrayValue(leftTemp);
-                    instructions.emplace_back("ADD", rightTemp, true);
-                }
-                else if (isRightArray)
-                {
-                    loadArrayValue(rightTemp);
-                    instructions.emplace_back("ADD", leftTemp, true);
-                }
-                else
-                {
-                    instructions.emplace_back("ADD", leftTemp, true);
-                }
-
-                // instructions.emplace_back("LOAD", leftTemp, true);
-                // instructions.emplace_back("ADD", rightTemp, true);
-                maxMemoryPointer = std::max(maxMemoryPointer, memoryPointer);
-
-                memoryPointer -= 2;
-            }
-            else if (binaryExpr->operation == "-")
-            {
-                if (isLeftArray && isRightArray)
-                {
-                    loadArrayValue(leftTemp);
-                    instructions.emplace_back("SUBI", rightTemp, true);
-                }
-                else if (isLeftArray)
-                {
-                    loadArrayValue(leftTemp);
-                    instructions.emplace_back("SUB", rightTemp, true);
-                }
-                else if (isRightArray)
-                {
-                    instructions.emplace_back("LOAD", leftTemp, true);
-                    instructions.emplace_back("SUBI", rightTemp, true);
-                }
-                else
-                {
-                    instructions.emplace_back("LOAD", leftTemp, true);
-                    instructions.emplace_back("SUB", rightTemp, true);
-                }
-                maxMemoryPointer = std::max(maxMemoryPointer, memoryPointer);
-
-                memoryPointer -= 2;
-            }
-            else if (binaryExpr->operation == "*")
-            {
-                long long leftValue, rightValue;
-                handleArrayValues(isLeftArray, isRightArray, leftTemp, rightTemp, leftValue, rightValue);
-
-                long long resultTemp, signTemp;
-                initializeResultAndSign(resultTemp, signTemp);
-
-                handleOperandSign(leftValue, signTemp, true);
-                handleOperandSign(rightValue, signTemp, false);
-
-                performMultiplication(leftValue, rightValue, resultTemp);
-                applySign(resultTemp, signTemp);
-
-                maxMemoryPointer = std::max(maxMemoryPointer, memoryPointer);
-
-                memoryPointer -= 4;
-                if (isLeftArray)
-                    memoryPointer--;
-                if (isRightArray)
-                    memoryPointer--;
-            }
-            else if (binaryExpr->operation == "/")
-            {
-                long long leftValue, rightValue;
-                handleArrayValues(isLeftArray, isRightArray, leftTemp, rightTemp, leftValue, rightValue);
-
-                instructions.emplace_back("LOAD", rightValue, true);
-                instructions.emplace_back("JZERO", 38, true);
-
-                long long resultTemp, signTemp;
-                initializeResultAndSign(resultTemp, signTemp);
-
-                handleOperandSign(leftValue, signTemp, true);
-                handleOperandSign(rightValue, signTemp, false);
-
-                performDivision(leftValue, rightValue, resultTemp);
-                applySign(resultTemp, signTemp);
-
-                maxMemoryPointer = std::max(maxMemoryPointer, memoryPointer);
-
-                memoryPointer -= 4;
-                if (isLeftArray)
-                    memoryPointer--;
-                if (isRightArray)
-                    memoryPointer--;
-            }
-            else if (binaryExpr->operation == "%")
-            {
-                long long leftValue, rightValue;
-                handleArrayValues(isLeftArray, isRightArray, leftTemp, rightTemp, leftValue, rightValue);
-                // Handle division by zero
-                instructions.emplace_back("LOAD", rightValue, true);
-                instructions.emplace_back("JZERO", 32, true); // Skip the whole operation if divisor is zero
-
-                instructions.emplace_back("LOAD", leftValue, true);
-                instructions.emplace_back("JZERO", 30, true); // Skip the whole operation if divisor is zero
-
-                // Store remainder (initialize with dividend)
-                instructions.emplace_back("LOAD", leftValue, true);
-                instructions.emplace_back("STORE", memoryPointer, true);
-                long long remainderTemp = memoryPointer++;
-
-                // Check if divisor is positive
-                instructions.emplace_back("SET", 0, true);
-                instructions.emplace_back("SUB", rightValue, true);
-                instructions.emplace_back("JPOS", 13, true); // Jump to negative divisor case
-
-                // Positive divisor case
-                instructions.emplace_back("LOAD", remainderTemp, true);
-                instructions.emplace_back("SUB", rightValue, true);
-                instructions.emplace_back("JNEG", 3, true); // While remainder >= divisor
-                instructions.emplace_back("STORE", remainderTemp, true);
-                instructions.emplace_back("JUMP", -3, true);
-
-                // // Adjust for negative dividend
-                instructions.emplace_back("LOAD", remainderTemp, true);
-                instructions.emplace_back("JPOS", 5, true);  // Skip if remainder >= 0
-                instructions.emplace_back("JZERO", 4, true); // Skip if remainder == 0
-                instructions.emplace_back("ADD", rightValue, true);
-                instructions.emplace_back("STORE", remainderTemp, true);
-                instructions.emplace_back("JUMP", -4, true);
-                instructions.emplace_back("JUMP", 12, true); // Skip negative divisor case
-
-                // Negative divisor case
-                instructions.emplace_back("LOAD", remainderTemp, true);
-                instructions.emplace_back("SUB", rightValue, true);
-                instructions.emplace_back("JPOS", 3, true); // While remainder <= divisor
-                instructions.emplace_back("STORE", remainderTemp, true);
-                instructions.emplace_back("JUMP", -3, true);
-
-                // Adjust for positive dividend
-                instructions.emplace_back("LOAD", remainderTemp, true);
-                instructions.emplace_back("JNEG", 5, true);  // Skip if remainder <= 0
-                instructions.emplace_back("JZERO", 4, true); // Skip if remainder == 0
-                instructions.emplace_back("ADD", rightValue, true);
-                instructions.emplace_back("STORE", remainderTemp, true);
-                instructions.emplace_back("JUMP", -4, true);
-
-                // Load final result
-                instructions.emplace_back("LOAD", remainderTemp, true);
-
-                maxMemoryPointer = std::max(maxMemoryPointer, memoryPointer);
-
-                memoryPointer -= 3;
-                if (isLeftArray)
-                    memoryPointer--;
-                if (isRightArray)
-                    memoryPointer--;
-            }
-        }
-        else if (procedureCalls.back() != "main")
-        {
-            if (auto variable = dynamic_cast<IdentifierNode *>(expression))
-            {
-                auto address = getProcedureIdentifierAddress(*variable->name);
-                if (address == 1)
-                {
-                    address = getProcedureArgumentAddress(*variable->name);
-                    instructions.emplace_back("LOADI", address, true);
-                }
-                else if (address == 2)
-                {
-                    address = getProcedureVariableAddress(*variable->name);
-                    instructions.emplace_back("LOAD", address, true);
-                }
-                else if (address == 3)
-                {
-                    generateProcedureArrayAccess(variable);
-                    loadArrayValue(memoryPointer);
-                }
-                else if (address == 4)
-                {
-                    generateProcedureArgumentsArrayAccess(variable);
-                    loadArrayValue(memoryPointer);
                 }
             }
             else if (auto valueNode = dynamic_cast<ValueNode *>(expression))
@@ -1843,28 +2457,9 @@ public:
                 instructions.emplace_back("SET", valueNode->value, true);
             }
         }
-        else if (auto variable = dynamic_cast<IdentifierNode *>(expression))
+        catch (const std::runtime_error &e)
         {
-            auto it = iteratorMemoryMap.find(*variable->name);
-            if (variable->index)
-            {
-                generateArrayAccess(variable);
-                loadArrayValue(memoryPointer);
-            }
-            else if (it != iteratorMemoryMap.end())
-            {
-                long long address = getIteratorAddress(*variable->name);
-                instructions.emplace_back("LOAD", address, true);
-            }
-            else
-            {
-                long long address = getVariableMemoryAddress(*variable->name);
-                instructions.emplace_back("LOAD", address, true);
-            }
-        }
-        else if (auto valueNode = dynamic_cast<ValueNode *>(expression))
-        {
-            instructions.emplace_back("SET", valueNode->value, true);
+            throw CodeGeneratorError(e.what(), expression->getLineNumber());
         }
     }
 

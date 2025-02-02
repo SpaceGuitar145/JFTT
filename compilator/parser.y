@@ -83,18 +83,15 @@ procedures:
     {
         $1->addProcedure(new ProcedureNode($3, $5, $7));
         $$ = $1;
-        std::cout << "I am here3" << std::endl;
     }
     | procedures PROCEDURE proc_head IS PROGRAM_BEGIN commands END
     {
-        std::cout << "I am here2" << std::endl;
         $1->addProcedure(new ProcedureNode($3, $6));
         $$ = $1;
     }
     | 
     {
         $$ = new ProceduresNode();
-        std::cout << "I am here" << std::endl;
     }
 ;
 
@@ -126,42 +123,52 @@ command:
     identifier ASSIGN expression ';'
     {
         $$ = new AssignNode($1, $3);
+        $$->setLineNumber(yylineno);
     }
     | IF condition THEN commands ELSE commands ENDIF
     {
         $$ = new IfNode($2, $4, $6);
+        $$->setLineNumber(yylineno);
     }
     | IF condition THEN commands ENDIF
     {
         $$ = new IfNode($2, $4);
+        $$->setLineNumber(yylineno);
     }
     | WHILE condition DO commands ENDWHILE
     {
         $$ = new WhileNode($2, $4);
+        $$->setLineNumber(yylineno);
     }
     | REPEAT commands UNTIL condition ';'
     {
         $$ = new RepeatUntilNode($4, $2); 
+        $$->setLineNumber(yylineno);
     }
     | FOR pidentifier FROM value TO value DO commands ENDFOR 
     {
         $$ = new ForToNode($2, $4, $6, $8);
+        $$->setLineNumber(yylineno);
     }
     | FOR pidentifier FROM value DOWNTO value DO commands ENDFOR
     {
         $$ = new ForDownToNode($2, $4, $6, $8);
+        $$->setLineNumber(yylineno);
     }
     | proc_call ';'
     {
         $$ = $1;
+        $$->setLineNumber(yylineno);
     }
     | READ identifier ';'
     {
         $$ = new ReadNode($2);
+        $$->setLineNumber(yylineno);
     }
     | WRITE value ';'
     {
         $$ = new WriteNode($2);
+        $$->setLineNumber(yylineno);
     }
 ;
 
@@ -169,6 +176,7 @@ proc_head:
     pidentifier '(' args_decl ')'
     {
         $$ = new ProcedureHeadNode($1, $3);
+        $$->setLineNumber(yylineno);
     }
 ;
 
@@ -176,12 +184,14 @@ proc_call:
     pidentifier '(' args ')'
     {
         $$ = new ProcedureCallNode($1, $3);
+        $$->setLineNumber(yylineno);
     }
 ;
 
 declarations:
     declarations ',' pidentifier 
     {
+        $1->setLineNumber(yylineno-1);
         $1->addVariableDeclaration($3);
         $$ = $1;
     }
@@ -193,6 +203,7 @@ declarations:
     | pidentifier 
     {
         $$ = new DeclarationsNode();
+        $$->setLineNumber(yylineno-1);
         $$->addVariableDeclaration($1);
     }
     | pidentifier '[' num ':' num ']' 
@@ -229,11 +240,13 @@ args:
     args ',' pidentifier 
     {
         $1->addArgument($3);
+        $$->setLineNumber(yylineno);
         $$ = $1;
     }
     | pidentifier
     {
         $$ = new ProcedureCallArguments();
+        $$->setLineNumber(yylineno);
         $$->addArgument($1);
     }
 ;
@@ -242,26 +255,32 @@ expression:
     value
     {
         $$ = $1;
+        $$->setLineNumber(yylineno);
     }
     | value '+' value
     {
         $$ = new BinaryExpressionNode($1,$3,"+");
+        $$->setLineNumber(yylineno);
     }
     | value '-' value
     {
         $$ = new BinaryExpressionNode($1,$3,"-");
+        $$->setLineNumber(yylineno);
     }
     | value '*' value
     {
         $$ = new BinaryExpressionNode($1,$3,"*");
+        $$->setLineNumber(yylineno);
     }
     | value '/' value
     {
         $$ = new BinaryExpressionNode($1,$3,"/");
+        $$->setLineNumber(yylineno);
     }
     | value '%' value
     {
         $$ = new BinaryExpressionNode($1,$3,"%");
+        $$->setLineNumber(yylineno);
     }
 ;
 
@@ -269,26 +288,32 @@ condition:
     value '=' value
     {
         $$ = new ConditionNode($1, $3, "=");
+        $$->setLineNumber(yylineno);
     }
     | value NEQ value
     {
         $$ = new ConditionNode($1, $3, "!=");
+        $$->setLineNumber(yylineno);
     }
     | value '>' value
     {
         $$ = new ConditionNode($1, $3, ">");
+        $$->setLineNumber(yylineno);
     }
     | value '<' value
     {
         $$ = new ConditionNode($1, $3, "<");
+        $$->setLineNumber(yylineno);
     }
     | value GEQ value
     {
         $$ = new ConditionNode($1, $3, ">=");
+        $$->setLineNumber(yylineno);
     }
     | value LEQ value
     {
         $$ = new ConditionNode($1, $3, "<=");
+        $$->setLineNumber(yylineno);
     }
 ;
 

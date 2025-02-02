@@ -1,4 +1,5 @@
 #include <iostream>
+#include <fstream>
 #include <cstdio>
 #include "AstNode.hpp"
 #include "CodeGenerator.hpp"
@@ -9,14 +10,14 @@ extern int yydebug;
 extern ProgramNode* root;
 
 int main(int argc, char** argv) {
-    if (argc > 1) {
-        yyin = fopen(argv[1], "r");
-        if (!yyin) {
-            std::cerr << "Failed to open file: " << argv[1] << std::endl;
-            return 1;
-        }
-    } else {
-        std::cerr << "Usage: " << argv[0] << " <input_file>" << std::endl;
+    if (argc != 3) {
+        std::cerr << "Usage: " << argv[0] << " <input_file> <output_file>" << std::endl;
+        return 1;
+    }
+
+    yyin = fopen(argv[1], "r");
+    if (!yyin) {
+        std::cerr << "Failed to open input file: " << argv[1] << std::endl;
         return 1;
     }
 
@@ -25,16 +26,29 @@ int main(int argc, char** argv) {
         std::cout << "Parsing completed successfully." << std::endl;
 
         if (root) {
-            // std::cout << "Generated AST:" << std::endl;
-            // root->print();
-
             try {
                 CodeGenerator generator;
                 generator.generateProgram(root);
-                std::cout << "Generated Instructions:" << std::endl;
+                
+                std::ofstream outFile(argv[2]);
+                if (!outFile.is_open()) {
+                    std::cerr << "Failed to open output file: " << argv[2] << std::endl;
+                    fclose(yyin);
+                    return 1;
+                }
+
+                auto cout_buf = std::cout.rdbuf();
+                std::cout.rdbuf(outFile.rdbuf());
+
                 generator.printInstructions();
+
+                std::cout.rdbuf(cout_buf);
+                outFile.close();
+
             } catch (const std::runtime_error& e) {
-                std::cerr << "Error during code generation: " << e.what() << std::endl;
+                std::cerr << e.what() << std::endl;
+                fclose(yyin);
+                return 1;
             }
         } else {
             std::cerr << "No AST generated." << std::endl;
@@ -44,8 +58,6 @@ int main(int argc, char** argv) {
     }
 
     if (yyin) fclose(yyin);
-
     delete root;
-
     return 0;
 }

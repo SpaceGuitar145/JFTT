@@ -6,8 +6,14 @@
 #include <string>
 
 class AstNode {
+protected:
+    int lineNumber;
+
 public:
+    AstNode() : lineNumber(0) {}
     virtual ~AstNode() = default;
+    void setLineNumber(int line) { lineNumber = line; }
+    int getLineNumber() const { return lineNumber; }
     virtual void print(int indent = 0) const = 0;
 
 protected:
