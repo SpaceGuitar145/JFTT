@@ -5,7 +5,7 @@ CXXFLAGS = -std=c++17 -Wall -Wextra
 
 LEXER = lexer.l
 PARSER = parser.y
-EXECUTABLE = parser
+EXECUTABLE = kompilator
 
 all: $(EXECUTABLE)
 
@@ -28,4 +28,4 @@ lex.yy.c: $(LEXER) parser.tab.h
 	$(FLEX) $<
 
 clean:
-	rm -f parser parser.tab.* lex.yy.* *.o
+	rm -f kompilator parser.tab.* lex.yy.* *.o
