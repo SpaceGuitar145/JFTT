@@ -64,11 +64,6 @@ private:
         }
     }
 
-    void initializeVariable(const std::string &name)
-    {
-        initializedVariables[procedureCalls.back()][name] = true;
-    }
-
     void generateArrayAccess(IdentifierNode *identifier)
     {
         if (auto index = dynamic_cast<IdentifierNode *>(identifier->index))
@@ -233,25 +228,16 @@ private:
         instructions.emplace_back("SUB", currentDivisor, true);
         instructions.emplace_back("JNEG", 2, true);
         instructions.emplace_back("JUMP", -33, true);
-
-        // instructions.emplace_back("LOAD", leftValue, true);
-        // instructions.emplace_back("SUB", rightValue, true);
-        // instructions.emplace_back("JNEG", 7, true);
-        // instructions.emplace_back("STORE", leftValue, true);
-        // instructions.emplace_back("LOAD", resultTemp, true);
-        // instructions.emplace_back("SET", 1, true);
-        // instructions.emplace_back("ADD", resultTemp, true);
-        // instructions.emplace_back("STORE", resultTemp, true);
-        // instructions.emplace_back("JUMP", -8, true);
     }
 
     void allocateIterator(const std::string &name)
     {
-        // if (iteratorMemoryMap.count(name) || variableMemoryMap.count(name))
-        // {
-        //     throw std::runtime_error("Iterator or variable already declared: " + name);
-        // }
+        if (iteratorMemoryMap.count(name))
+        {
+            throw std::runtime_error("Iterator or variable already declared: " + name);
+        }
         iteratorMemoryMap[name] = memoryPointer++;
+        initializedVariables[procedureCalls.back()][name] = true;
     }
 
     void deallocateIterator(const std::string &name)
@@ -261,6 +247,7 @@ private:
             maxMemoryPointer = std::max(maxMemoryPointer, memoryPointer);
             memoryPointer--;
             iteratorMemoryMap.erase(name);
+            initializedVariables[procedureCalls.back()].erase(name);
         }
     }
 
@@ -283,8 +270,8 @@ private:
 
         long long orderIndex = argumentsPlaces[procedureName].size() + 1;
         argumentsPlaces[procedureName][orderIndex] = {argumentName, false};
-        initializedVariables[procedureName][argumentName] = true;
 
+        initializedVariables[procedureName][argumentName] = true;
         procedureArguments[procedureName][argumentName] = memoryPointer++;
     }
 
@@ -297,8 +284,8 @@ private:
 
         long long orderIndex = argumentsPlaces[procedureName].size() + 1;
         argumentsPlaces[procedureName][orderIndex] = {argumentName, true};
-        initializedVariables[procedureName][argumentName] = true;
 
+        initializedVariables[procedureName][argumentName] = true;
         procedureArgumentsArrays[procedureName][argumentName] = memoryPointer++;
     }
 
@@ -792,6 +779,7 @@ public:
                             procedureCalls.pop_back();
                             long long address = getProcedureVariableAddress(*identifier->name);
                             instructions.emplace_back("SET", address, true);
+                            initializedVariables[procedureCalls.back()][*identifier->name] = true;
                             procedureCalls.emplace_back(procedureRemember);
                             long long argumentAddress = getProcedureArgumentAddress(expectedArg.first);
                             instructions.emplace_back("STORE", argumentAddress, true);
@@ -807,6 +795,7 @@ public:
                             procedureCalls.pop_back();
                             long long address = getProcedureArrayElementAddress(*identifier->name);
                             instructions.emplace_back("SET", address, true);
+                            initializedVariables[procedureCalls.back()][*identifier->name] = true;
                             procedureCalls.emplace_back(procedureRemember);
                             long long argumentAddress = getProcedureArgumentsArrayElementAddress(expectedArg.first);
                             instructions.emplace_back("STORE", argumentAddress, true);
@@ -851,6 +840,10 @@ public:
                         instructions.emplace_back("SET", address, true);
                         long long argumentAddress = getProcedureArgumentArrayElementAddress(expectedArg.first);
                         instructions.emplace_back("STORE", argumentAddress, true);
+                        std::string procedureRemember = procedureCalls.back();
+                        procedureCalls.pop_back();
+                        initializedVariables[procedureCalls.back()][*identifier->name] = true;
+                        procedureCalls.emplace_back(procedureRemember);
                         memoryPointer++;
                     }
                     else
@@ -864,6 +857,10 @@ public:
                         instructions.emplace_back("SET", address, true);
                         long long argumentAddress = getProcedureArgumentAddress(expectedArg.first);
                         instructions.emplace_back("STORE", argumentAddress, true);
+                        std::string procedureRemember = procedureCalls.back();
+                        procedureCalls.pop_back();
+                        initializedVariables[procedureCalls.back()][*identifier->name] = true;
+                        procedureCalls.emplace_back(procedureRemember);
                         memoryPointer++;
                     }
                 }
@@ -913,110 +910,132 @@ public:
 
     void generateRepeatUntilCommand(RepeatUntilNode *repeatUntilNode)
     {
-        long long start = instructions.size();
-        generateCommands(repeatUntilNode->commands);
-        generateCondition(repeatUntilNode->condition);
+        try
+        {
+            long long start = instructions.size();
+            generateCommands(repeatUntilNode->commands);
+            generateCondition(repeatUntilNode->condition);
 
-        if (repeatUntilNode->condition->operation == "=")
-        {
-            instructions.emplace_back("JZERO", 2, true);
-            instructions.emplace_back("JUMP", start - instructions.size(), true);
+            if (repeatUntilNode->condition->operation == "=")
+            {
+                instructions.emplace_back("JZERO", 2, true);
+                instructions.emplace_back("JUMP", start - instructions.size(), true);
+            }
+            else if (repeatUntilNode->condition->operation == "!=")
+            {
+                instructions.emplace_back("JZERO", start - instructions.size(), true);
+            }
+            else if (repeatUntilNode->condition->operation == "<")
+            {
+                instructions.emplace_back("JPOS", 2, true);
+                instructions.emplace_back("JUMP", start - instructions.size(), true);
+            }
+            else if (repeatUntilNode->condition->operation == ">")
+            {
+                instructions.emplace_back("JNEG", 2, true);
+                instructions.emplace_back("JUMP", start - instructions.size(), true);
+            }
+            else if (repeatUntilNode->condition->operation == ">=")
+            {
+                instructions.emplace_back("JPOS", start - instructions.size(), true);
+            }
+            else if (repeatUntilNode->condition->operation == "<=")
+            {
+                instructions.emplace_back("JNEG", start - instructions.size(), true);
+            }
         }
-        else if (repeatUntilNode->condition->operation == "!=")
+        catch (const CodeGeneratorError &e)
         {
-            instructions.emplace_back("JZERO", start - instructions.size(), true);
+            throw;
         }
-        else if (repeatUntilNode->condition->operation == "<")
+        catch (const std::runtime_error &e)
         {
-            instructions.emplace_back("JPOS", 2, true);
-            instructions.emplace_back("JUMP", start - instructions.size(), true);
-        }
-        else if (repeatUntilNode->condition->operation == ">")
-        {
-            instructions.emplace_back("JNEG", 2, true);
-            instructions.emplace_back("JUMP", start - instructions.size(), true);
-        }
-        else if (repeatUntilNode->condition->operation == ">=")
-        {
-            instructions.emplace_back("JPOS", start - instructions.size(), true);
-        }
-        else if (repeatUntilNode->condition->operation == "<=")
-        {
-            instructions.emplace_back("JNEG", start - instructions.size(), true);
+            throw CodeGeneratorError(e.what(), repeatUntilNode->getLineNumber());
         }
     }
 
     void generateWhileNode(WhileNode *whileNode)
     {
-        long long start = instructions.size();
-        generateCondition(whileNode->condition);
-
-        if (whileNode->condition->operation == "=")
+        try
         {
-            instructions.emplace_back("JZERO", 2, true);
+            long long start = instructions.size();
+            generateCondition(whileNode->condition);
 
-            instructions.emplace_back("JUMP", 0, true);
-            long long skipDoBlock = instructions.size() - 1;
+            if (whileNode->condition->operation == "=")
+            {
+                instructions.emplace_back("JZERO", 2, true);
 
-            generateCommands(whileNode->commands);
-            instructions.emplace_back("JUMP", start - instructions.size(), true);
+                instructions.emplace_back("JUMP", 0, true);
+                long long skipDoBlock = instructions.size() - 1;
 
-            instructions[skipDoBlock].argument = instructions.size() - skipDoBlock;
+                generateCommands(whileNode->commands);
+                instructions.emplace_back("JUMP", start - instructions.size(), true);
+
+                instructions[skipDoBlock].argument = instructions.size() - skipDoBlock;
+            }
+            else if (whileNode->condition->operation == "!=")
+            {
+                instructions.emplace_back("JZERO", 2, true);
+                long long skipDoBlock = instructions.size() - 1;
+
+                generateCommands(whileNode->commands);
+
+                instructions.emplace_back("JUMP", start - instructions.size(), true);
+
+                instructions[skipDoBlock].argument = instructions.size() - skipDoBlock;
+            }
+            else if (whileNode->condition->operation == "<")
+            {
+                instructions.emplace_back("JPOS", 2, true);
+                instructions.emplace_back("JUMP", 0, true);
+                long long skipDoBlock = instructions.size() - 1;
+
+                generateCommands(whileNode->commands);
+                instructions.emplace_back("JUMP", start - instructions.size(), true);
+
+                instructions[skipDoBlock].argument = instructions.size() - skipDoBlock;
+            }
+            else if (whileNode->condition->operation == ">")
+            {
+                instructions.emplace_back("JNEG", 2, true);
+                instructions.emplace_back("JUMP", 0, true);
+                long long skipDoBlock = instructions.size() - 1;
+
+                generateCommands(whileNode->commands);
+                instructions.emplace_back("JUMP", start - instructions.size(), true);
+
+                instructions[skipDoBlock].argument = instructions.size() - skipDoBlock;
+            }
+            else if (whileNode->condition->operation == ">=")
+            {
+                instructions.emplace_back("JPOS", start - instructions.size(), true);
+                long long skipDoBlock = instructions.size() - 1;
+
+                generateCommands(whileNode->commands);
+
+                instructions.emplace_back("JUMP", start - instructions.size(), true);
+
+                instructions[skipDoBlock].argument = instructions.size() - skipDoBlock;
+            }
+            else if (whileNode->condition->operation == "<=")
+            {
+                instructions.emplace_back("JNEG", start - instructions.size(), true);
+                long long skipDoBlock = instructions.size() - 1;
+
+                generateCommands(whileNode->commands);
+
+                instructions.emplace_back("JUMP", start - instructions.size(), true);
+
+                instructions[skipDoBlock].argument = instructions.size() - skipDoBlock;
+            }
         }
-        else if (whileNode->condition->operation == "!=")
+        catch (const CodeGeneratorError &e)
         {
-            instructions.emplace_back("JZERO", 2, true);
-            long long skipDoBlock = instructions.size() - 1;
-
-            generateCommands(whileNode->commands);
-
-            instructions.emplace_back("JUMP", start - instructions.size(), true);
-
-            instructions[skipDoBlock].argument = instructions.size() - skipDoBlock;
+            throw;
         }
-        else if (whileNode->condition->operation == "<")
+        catch (const std::runtime_error &e)
         {
-            instructions.emplace_back("JPOS", 2, true);
-            instructions.emplace_back("JUMP", 0, true);
-            long long skipDoBlock = instructions.size() - 1;
-
-            generateCommands(whileNode->commands);
-            instructions.emplace_back("JUMP", start - instructions.size(), true);
-
-            instructions[skipDoBlock].argument = instructions.size() - skipDoBlock;
-        }
-        else if (whileNode->condition->operation == ">")
-        {
-            instructions.emplace_back("JNEG", 2, true);
-            instructions.emplace_back("JUMP", 0, true);
-            long long skipDoBlock = instructions.size() - 1;
-
-            generateCommands(whileNode->commands);
-            instructions.emplace_back("JUMP", start - instructions.size(), true);
-
-            instructions[skipDoBlock].argument = instructions.size() - skipDoBlock;
-        }
-        else if (whileNode->condition->operation == ">=")
-        {
-            instructions.emplace_back("JPOS", start - instructions.size(), true);
-            long long skipDoBlock = instructions.size() - 1;
-
-            generateCommands(whileNode->commands);
-
-            instructions.emplace_back("JUMP", start - instructions.size(), true);
-
-            instructions[skipDoBlock].argument = instructions.size() - skipDoBlock;
-        }
-        else if (whileNode->condition->operation == "<=")
-        {
-            instructions.emplace_back("JNEG", start - instructions.size(), true);
-            long long skipDoBlock = instructions.size() - 1;
-
-            generateCommands(whileNode->commands);
-
-            instructions.emplace_back("JUMP", start - instructions.size(), true);
-
-            instructions[skipDoBlock].argument = instructions.size() - skipDoBlock;
+            throw CodeGeneratorError(e.what(), whileNode->getLineNumber());
         }
     }
 
@@ -1226,46 +1245,71 @@ public:
 
     void generateForDownToNode(ForDownToNode *forToNode)
     {
-        allocateIterator(*forToNode->pidentifier->name);
-        long long iterator = getIteratorAddress(*forToNode->pidentifier->name);
-
-        if (procedureCalls.back() != "main")
+        try
         {
-            if (auto fromValue = dynamic_cast<IdentifierNode *>(forToNode->fromValue))
+            allocateIterator(*forToNode->pidentifier->name);
+            long long iterator = getIteratorAddress(*forToNode->pidentifier->name);
+
+            if (procedureCalls.back() != "main")
             {
-                auto address = getProcedureIdentifierAddress(*fromValue->name);
-                auto it = iteratorMemoryMap.find(*fromValue->name);
-                if (fromValue->index || (address == 3 || address == 4))
+                if (auto fromValue = dynamic_cast<IdentifierNode *>(forToNode->fromValue))
                 {
-                    if (!fromValue->index)
+                    auto address = getProcedureIdentifierAddress(*fromValue->name);
+                    auto it = iteratorMemoryMap.find(*fromValue->name);
+                    if (fromValue->index || (address == 3 || address == 4))
                     {
-                        throw std::runtime_error("Misuse of array variable: " + *fromValue->name);
+                        if (!fromValue->index)
+                        {
+                            throw std::runtime_error("Misuse of array variable: " + *fromValue->name);
+                        }
+                        else if (address == 3)
+                        {
+                            generateProcedureArrayAccess(fromValue);
+                            loadArrayValue(memoryPointer);
+                        }
+                        else if (address == 4)
+                        {
+                            generateProcedureArgumentsArrayAccess(fromValue);
+                            loadArrayValue(memoryPointer);
+                        }
+                        else
+                        {
+                            throw std::runtime_error("Undeclared array: " + *fromValue->name);
+                        }
                     }
-                    else if (address == 3)
+                    else if (address == 1)
                     {
-                        generateProcedureArrayAccess(fromValue);
-                        loadArrayValue(memoryPointer);
+                        address = getProcedureArgumentAddress(*fromValue->name);
+                        instructions.emplace_back("LOADI", address, true);
                     }
-                    else if (address == 4)
+                    else if (address == 2)
                     {
-                        generateProcedureArgumentsArrayAccess(fromValue);
-                        loadArrayValue(memoryPointer);
+                        isInitialiazed(fromValue);
+                        address = getProcedureVariableAddress(*fromValue->name);
+                        instructions.emplace_back("LOAD", address, true);
+                    }
+                    else if (it != iteratorMemoryMap.end())
+                    {
+                        long long address = getIteratorAddress(*fromValue->name);
+                        instructions.emplace_back("LOAD", address, true);
                     }
                     else
                     {
-                        throw std::runtime_error("Undeclared array: " + *fromValue->name);
+                        throw std::runtime_error("Undeclared variable: " + *fromValue->name);
                     }
                 }
-                else if (address == 1)
+                else if (auto valueNode = dynamic_cast<ValueNode *>(forToNode->fromValue))
                 {
-                    address = getProcedureArgumentAddress(*fromValue->name);
-                    instructions.emplace_back("LOADI", address, true);
+                    instructions.emplace_back("SET", valueNode->value, true);
                 }
-                else if (address == 2)
+            }
+            else if (auto fromValue = dynamic_cast<IdentifierNode *>(forToNode->fromValue))
+            {
+                auto it = iteratorMemoryMap.find(*fromValue->name);
+                if (fromValue->index)
                 {
-                    isInitialiazed(fromValue);
-                    address = getProcedureVariableAddress(*fromValue->name);
-                    instructions.emplace_back("LOAD", address, true);
+                    generateArrayAccess(fromValue);
+                    loadArrayValue(memoryPointer);
                 }
                 else if (it != iteratorMemoryMap.end())
                 {
@@ -1274,143 +1318,129 @@ public:
                 }
                 else
                 {
-                    throw std::runtime_error("Undeclared variable: " + *fromValue->name);
+                    isInitialiazed(fromValue);
+                    long long address = getVariableMemoryAddress(*fromValue->name);
+                    instructions.emplace_back("LOAD", address, true);
                 }
             }
             else if (auto valueNode = dynamic_cast<ValueNode *>(forToNode->fromValue))
             {
                 instructions.emplace_back("SET", valueNode->value, true);
             }
-        }
-        else if (auto fromValue = dynamic_cast<IdentifierNode *>(forToNode->fromValue))
-        {
-            auto it = iteratorMemoryMap.find(*fromValue->name);
-            if (fromValue->index)
-            {
-                generateArrayAccess(fromValue);
-                loadArrayValue(memoryPointer);
-            }
-            else if (it != iteratorMemoryMap.end())
-            {
-                long long address = getIteratorAddress(*fromValue->name);
-                instructions.emplace_back("LOAD", address, true);
-            }
-            else
-            {
-                isInitialiazed(fromValue);
-                long long address = getVariableMemoryAddress(*fromValue->name);
-                instructions.emplace_back("LOAD", address, true);
-            }
-        }
-        else if (auto valueNode = dynamic_cast<ValueNode *>(forToNode->fromValue))
-        {
-            instructions.emplace_back("SET", valueNode->value, true);
-        }
 
-        instructions.emplace_back("STORE", iterator, true);
+            instructions.emplace_back("STORE", iterator, true);
 
-        if (procedureCalls.back() != "main")
-        {
-            if (auto rightVar = dynamic_cast<IdentifierNode *>(forToNode->toValue))
+            if (procedureCalls.back() != "main")
             {
-                auto address = getProcedureIdentifierAddress(*rightVar->name);
-                auto it = iteratorMemoryMap.find(*rightVar->name);
-                if (rightVar->index || (address == 3 || address == 4))
+                if (auto rightVar = dynamic_cast<IdentifierNode *>(forToNode->toValue))
                 {
-                    if (!rightVar->index)
+                    auto address = getProcedureIdentifierAddress(*rightVar->name);
+                    auto it = iteratorMemoryMap.find(*rightVar->name);
+                    if (rightVar->index || (address == 3 || address == 4))
                     {
-                        throw std::runtime_error("Misuse of array variable: " + *rightVar->name);
+                        if (!rightVar->index)
+                        {
+                            throw std::runtime_error("Misuse of array variable: " + *rightVar->name);
+                        }
+                        else if (address == 3)
+                        {
+                            generateProcedureArrayAccess(rightVar);
+                            loadArrayValue(memoryPointer);
+                        }
+                        else if (address == 4)
+                        {
+                            generateProcedureArgumentsArrayAccess(rightVar);
+                            loadArrayValue(memoryPointer);
+                        }
+                        else
+                        {
+                            throw std::runtime_error("Undeclared array: " + *rightVar->name);
+                        }
                     }
-                    else if (address == 3)
+                    else if (address == 1)
                     {
-                        generateProcedureArrayAccess(rightVar);
-                        loadArrayValue(memoryPointer);
+                        address = getProcedureArgumentAddress(*rightVar->name);
+                        instructions.emplace_back("LOADI", address, true);
                     }
-                    else if (address == 4)
+                    else if (address == 2)
                     {
-                        generateProcedureArgumentsArrayAccess(rightVar);
-                        loadArrayValue(memoryPointer);
+                        isInitialiazed(rightVar);
+                        address = getProcedureVariableAddress(*rightVar->name);
+                        instructions.emplace_back("LOAD", address, true);
+                    }
+                    else if (it != iteratorMemoryMap.end())
+                    {
+                        long long address = getIteratorAddress(*rightVar->name);
+                        instructions.emplace_back("LOAD", address, true);
                     }
                     else
                     {
-                        throw std::runtime_error("Undeclared array: " + *rightVar->name);
+                        throw std::runtime_error("Undeclared variable: " + *rightVar->name);
                     }
                 }
-                else if (address == 1)
+                else if (auto valueNode = dynamic_cast<ValueNode *>(forToNode->toValue))
                 {
-                    address = getProcedureArgumentAddress(*rightVar->name);
-                    instructions.emplace_back("LOADI", address, true);
+                    instructions.emplace_back("SET", valueNode->value, true);
                 }
-                else if (address == 2)
+            }
+            else if (auto toValue = dynamic_cast<IdentifierNode *>(forToNode->toValue))
+            {
+                auto it = iteratorMemoryMap.find(*toValue->name);
+                if (toValue->index)
                 {
-                    isInitialiazed(rightVar);
-                    address = getProcedureVariableAddress(*rightVar->name);
-                    instructions.emplace_back("LOAD", address, true);
+                    generateArrayAccess(toValue);
+                    loadArrayValue(memoryPointer);
                 }
                 else if (it != iteratorMemoryMap.end())
                 {
-                    long long address = getIteratorAddress(*rightVar->name);
+                    long long address = getIteratorAddress(*toValue->name);
                     instructions.emplace_back("LOAD", address, true);
                 }
                 else
                 {
-                    throw std::runtime_error("Undeclared variable: " + *rightVar->name);
+                    isInitialiazed(toValue);
+                    long long address = getVariableMemoryAddress(*toValue->name);
+                    instructions.emplace_back("LOAD", address, true);
                 }
             }
             else if (auto valueNode = dynamic_cast<ValueNode *>(forToNode->toValue))
             {
                 instructions.emplace_back("SET", valueNode->value, true);
             }
+
+            instructions.emplace_back("STORE", memoryPointer, true);
+            long long toValue = memoryPointer++;
+
+            instructions.emplace_back("LOAD", iterator, true);
+            long long loopStart = instructions.size() - 1;
+            instructions.emplace_back("SUB", toValue, true);
+            instructions.emplace_back("JNEG", 0, true);
+            long long skipLoopJump = instructions.size() - 1;
+
+            generateCommands(forToNode->commands);
+
+            instructions.emplace_back("SET", -1, true);
+            instructions.emplace_back("ADD", iterator, true);
+            instructions.emplace_back("STORE", iterator, true);
+
+            instructions.emplace_back("JUMP", loopStart - instructions.size(), true);
+
+            long long loopEnd = instructions.size();
+            instructions[skipLoopJump].argument = loopEnd - skipLoopJump;
+
+            maxMemoryPointer = std::max(maxMemoryPointer, memoryPointer);
+
+            memoryPointer -= 1;
+            deallocateIterator(*forToNode->pidentifier->name);
         }
-        else if (auto toValue = dynamic_cast<IdentifierNode *>(forToNode->toValue))
+        catch (const CodeGeneratorError &e)
         {
-            auto it = iteratorMemoryMap.find(*toValue->name);
-            if (toValue->index)
-            {
-                generateArrayAccess(toValue);
-                loadArrayValue(memoryPointer);
-            }
-            else if (it != iteratorMemoryMap.end())
-            {
-                long long address = getIteratorAddress(*toValue->name);
-                instructions.emplace_back("LOAD", address, true);
-            }
-            else
-            {
-                isInitialiazed(toValue);
-                long long address = getVariableMemoryAddress(*toValue->name);
-                instructions.emplace_back("LOAD", address, true);
-            }
+            throw;
         }
-        else if (auto valueNode = dynamic_cast<ValueNode *>(forToNode->toValue))
+        catch (const std::runtime_error &e)
         {
-            instructions.emplace_back("SET", valueNode->value, true);
+            throw CodeGeneratorError(e.what(), forToNode->getLineNumber());
         }
-
-        instructions.emplace_back("STORE", memoryPointer, true);
-        long long toValue = memoryPointer++;
-
-        instructions.emplace_back("LOAD", iterator, true);
-        long long loopStart = instructions.size() - 1;
-        instructions.emplace_back("SUB", toValue, true);
-        instructions.emplace_back("JNEG", 0, true);
-        long long skipLoopJump = instructions.size() - 1;
-
-        generateCommands(forToNode->commands);
-
-        instructions.emplace_back("SET", -1, true);
-        instructions.emplace_back("ADD", iterator, true);
-        instructions.emplace_back("STORE", iterator, true);
-
-        instructions.emplace_back("JUMP", loopStart - instructions.size(), true);
-
-        long long loopEnd = instructions.size();
-        instructions[skipLoopJump].argument = loopEnd - skipLoopJump;
-
-        maxMemoryPointer = std::max(maxMemoryPointer, memoryPointer);
-
-        memoryPointer -= 1;
-        deallocateIterator(*forToNode->pidentifier->name);
     }
 
     void generateReadCommand(ReadNode *readNode)
@@ -1459,11 +1489,13 @@ public:
                         address = getProcedureArgumentAddress(*variable->name);
                         instructions.emplace_back("GET", 0, true);
                         instructions.emplace_back("STOREI", address, true);
+                        initializedVariables[procedureCalls.back()][*variable->name] = true;
                     }
                     else if (address == 2)
                     {
                         address = getProcedureVariableAddress(*variable->name);
                         instructions.emplace_back("GET", address, true);
+                        initializedVariables[procedureCalls.back()][*variable->name] = true;
                     }
                     else if (it != iteratorMemoryMap.end())
                     {
@@ -1490,8 +1522,8 @@ public:
             {
                 long long address = getVariableMemoryAddress(*identifier->name);
                 instructions.emplace_back("GET", address, true);
+                initializedVariables[procedureCalls.back()][*identifier->name] = true;
             }
-            initializeVariable(*readNode->identifier->name);
         }
         catch (const CodeGeneratorError &e)
         {
@@ -1672,136 +1704,147 @@ public:
 
     void generateIfCommand(IfNode *ifNode)
     {
-        generateCondition(ifNode->condition);
-
-        if (ifNode->condition->operation == "=")
+        try
         {
-            instructions.emplace_back("JZERO", 0, true);
-            long long condJumpLoc = instructions.size() - 1;
+            generateCondition(ifNode->condition);
 
-            if (ifNode->elseCommands)
+            if (ifNode->condition->operation == "=")
             {
-                generateCommands(ifNode->elseCommands);
-            }
-            long long endElseBlock = instructions.size();
-            instructions.emplace_back("JUMP", 0, true);
-            long long skipElseJump = instructions.size() - 1;
+                instructions.emplace_back("JZERO", 0, true);
+                long long condJumpLoc = instructions.size() - 1;
 
-            generateCommands(ifNode->thenCommands);
-            long long endThenBlock = instructions.size();
-
-            instructions[condJumpLoc].argument = endElseBlock - condJumpLoc + 1;
-            instructions[skipElseJump].argument = endThenBlock - skipElseJump;
-        }
-        else if (ifNode->condition->operation == "!=")
-        {
-            instructions.emplace_back("JZERO", 0, true);
-            long long condJumpLoc = instructions.size() - 1;
-
-            generateCommands(ifNode->thenCommands);
-
-            long long endThenBlock = instructions.size();
-            long long skipThenJump;
-            if (ifNode->elseCommands)
-            {
-                endThenBlock = instructions.size();
-                instructions.emplace_back("JUMP", 0, true);
-                skipThenJump = instructions.size() - 1;
-                generateCommands(ifNode->elseCommands);
+                if (ifNode->elseCommands)
+                {
+                    generateCommands(ifNode->elseCommands);
+                }
                 long long endElseBlock = instructions.size();
-                instructions[skipThenJump].argument = endElseBlock - skipThenJump;
-                instructions[condJumpLoc].argument = endThenBlock - condJumpLoc + 1;
-            }
-            else
-            {
-                instructions[condJumpLoc].argument = endThenBlock - condJumpLoc;
-            }
-        }
-        else if (ifNode->condition->operation == ">")
-        {
-            instructions.emplace_back("JNEG", 0, true);
-            long long condJumpLoc = instructions.size() - 1;
-
-            if (ifNode->elseCommands)
-            {
-                generateCommands(ifNode->elseCommands);
-            }
-            long long endElseBlock = instructions.size();
-            instructions.emplace_back("JUMP", 0, true);
-            long long skipElseJump = instructions.size() - 1;
-
-            generateCommands(ifNode->thenCommands);
-            long long endThenBlock = instructions.size();
-
-            instructions[condJumpLoc].argument = endElseBlock - condJumpLoc + 1;
-            instructions[skipElseJump].argument = endThenBlock - skipElseJump;
-        }
-        else if (ifNode->condition->operation == "<")
-        {
-            instructions.emplace_back("JPOS", 0, true);
-            long long condJumpLoc = instructions.size() - 1;
-
-            if (ifNode->elseCommands)
-            {
-                generateCommands(ifNode->elseCommands);
-            }
-            long long endElseBlock = instructions.size();
-            instructions.emplace_back("JUMP", 0, true);
-            long long skipElseJump = instructions.size() - 1;
-
-            generateCommands(ifNode->thenCommands);
-            long long endThenBlock = instructions.size();
-
-            instructions[condJumpLoc].argument = endElseBlock - condJumpLoc + 1;
-            instructions[skipElseJump].argument = endThenBlock - skipElseJump;
-        }
-        else if (ifNode->condition->operation == ">=")
-        {
-            instructions.emplace_back("JPOS", 0, true);
-            long long condJumpLoc = instructions.size() - 1;
-
-            generateCommands(ifNode->thenCommands);
-
-            long long endThenBlock = instructions.size();
-            long long skipThenJump;
-            if (ifNode->elseCommands)
-            {
-                endThenBlock = instructions.size();
                 instructions.emplace_back("JUMP", 0, true);
-                skipThenJump = instructions.size() - 1;
-                generateCommands(ifNode->elseCommands);
-                long long endElseBlock = instructions.size();
-                instructions[skipThenJump].argument = endElseBlock - skipThenJump;
-                instructions[condJumpLoc].argument = endThenBlock - condJumpLoc + 1;
+                long long skipElseJump = instructions.size() - 1;
+
+                generateCommands(ifNode->thenCommands);
+                long long endThenBlock = instructions.size();
+
+                instructions[condJumpLoc].argument = endElseBlock - condJumpLoc + 1;
+                instructions[skipElseJump].argument = endThenBlock - skipElseJump;
             }
-            else
+            else if (ifNode->condition->operation == "!=")
             {
-                instructions[condJumpLoc].argument = endThenBlock - condJumpLoc;
+                instructions.emplace_back("JZERO", 0, true);
+                long long condJumpLoc = instructions.size() - 1;
+
+                generateCommands(ifNode->thenCommands);
+
+                long long endThenBlock = instructions.size();
+                long long skipThenJump;
+                if (ifNode->elseCommands)
+                {
+                    endThenBlock = instructions.size();
+                    instructions.emplace_back("JUMP", 0, true);
+                    skipThenJump = instructions.size() - 1;
+                    generateCommands(ifNode->elseCommands);
+                    long long endElseBlock = instructions.size();
+                    instructions[skipThenJump].argument = endElseBlock - skipThenJump;
+                    instructions[condJumpLoc].argument = endThenBlock - condJumpLoc + 1;
+                }
+                else
+                {
+                    instructions[condJumpLoc].argument = endThenBlock - condJumpLoc;
+                }
+            }
+            else if (ifNode->condition->operation == ">")
+            {
+                instructions.emplace_back("JNEG", 0, true);
+                long long condJumpLoc = instructions.size() - 1;
+
+                if (ifNode->elseCommands)
+                {
+                    generateCommands(ifNode->elseCommands);
+                }
+                long long endElseBlock = instructions.size();
+                instructions.emplace_back("JUMP", 0, true);
+                long long skipElseJump = instructions.size() - 1;
+
+                generateCommands(ifNode->thenCommands);
+                long long endThenBlock = instructions.size();
+
+                instructions[condJumpLoc].argument = endElseBlock - condJumpLoc + 1;
+                instructions[skipElseJump].argument = endThenBlock - skipElseJump;
+            }
+            else if (ifNode->condition->operation == "<")
+            {
+                instructions.emplace_back("JPOS", 0, true);
+                long long condJumpLoc = instructions.size() - 1;
+
+                if (ifNode->elseCommands)
+                {
+                    generateCommands(ifNode->elseCommands);
+                }
+                long long endElseBlock = instructions.size();
+                instructions.emplace_back("JUMP", 0, true);
+                long long skipElseJump = instructions.size() - 1;
+
+                generateCommands(ifNode->thenCommands);
+                long long endThenBlock = instructions.size();
+
+                instructions[condJumpLoc].argument = endElseBlock - condJumpLoc + 1;
+                instructions[skipElseJump].argument = endThenBlock - skipElseJump;
+            }
+            else if (ifNode->condition->operation == ">=")
+            {
+                instructions.emplace_back("JPOS", 0, true);
+                long long condJumpLoc = instructions.size() - 1;
+
+                generateCommands(ifNode->thenCommands);
+
+                long long endThenBlock = instructions.size();
+                long long skipThenJump;
+                if (ifNode->elseCommands)
+                {
+                    endThenBlock = instructions.size();
+                    instructions.emplace_back("JUMP", 0, true);
+                    skipThenJump = instructions.size() - 1;
+                    generateCommands(ifNode->elseCommands);
+                    long long endElseBlock = instructions.size();
+                    instructions[skipThenJump].argument = endElseBlock - skipThenJump;
+                    instructions[condJumpLoc].argument = endThenBlock - condJumpLoc + 1;
+                }
+                else
+                {
+                    instructions[condJumpLoc].argument = endThenBlock - condJumpLoc;
+                }
+            }
+            else if (ifNode->condition->operation == "<=")
+            {
+                instructions.emplace_back("JNEG", 0, true);
+                long long condJumpLoc = instructions.size() - 1;
+
+                generateCommands(ifNode->thenCommands);
+
+                long long endThenBlock = instructions.size();
+                long long skipThenJump;
+                if (ifNode->elseCommands)
+                {
+                    endThenBlock = instructions.size();
+                    instructions.emplace_back("JUMP", 0, true);
+                    skipThenJump = instructions.size() - 1;
+                    generateCommands(ifNode->elseCommands);
+                    long long endElseBlock = instructions.size();
+                    instructions[skipThenJump].argument = endElseBlock - skipThenJump;
+                    instructions[condJumpLoc].argument = endThenBlock - condJumpLoc + 1;
+                }
+                else
+                {
+                    instructions[condJumpLoc].argument = endThenBlock - condJumpLoc;
+                }
             }
         }
-        else if (ifNode->condition->operation == "<=")
+        catch (const CodeGeneratorError &e)
         {
-            instructions.emplace_back("JNEG", 0, true);
-            long long condJumpLoc = instructions.size() - 1;
-
-            generateCommands(ifNode->thenCommands);
-
-            long long endThenBlock = instructions.size();
-            long long skipThenJump;
-            if (ifNode->elseCommands)
-            {
-                endThenBlock = instructions.size();
-                instructions.emplace_back("JUMP", 0, true);
-                skipThenJump = instructions.size() - 1;
-                generateCommands(ifNode->elseCommands);
-                long long endElseBlock = instructions.size();
-                instructions[skipThenJump].argument = endElseBlock - skipThenJump;
-                instructions[condJumpLoc].argument = endThenBlock - condJumpLoc + 1;
-            }
-            else
-            {
-                instructions[condJumpLoc].argument = endThenBlock - condJumpLoc;
-            }
+            throw;
+        }
+        catch (const std::runtime_error &e)
+        {
+            throw CodeGeneratorError(e.what(), ifNode->getLineNumber());
         }
     }
 
@@ -1949,12 +1992,14 @@ public:
                         generateExpression(assignNode->expression);
                         address = getProcedureArgumentAddress(*variable->name);
                         instructions.emplace_back("STOREI", address, true);
+                        initializedVariables[procedureCalls.back()][*variable->name] = true;
                     }
                     else if (address == 2)
                     {
                         generateExpression(assignNode->expression);
                         address = getProcedureVariableAddress(*variable->name);
                         instructions.emplace_back("STORE", address, true);
+                        initializedVariables[procedureCalls.back()][*variable->name] = true;
                     }
                     else if (it != iteratorMemoryMap.end())
                     {
@@ -1988,9 +2033,9 @@ public:
                     generateExpression(assignNode->expression);
                     long long address = getVariableMemoryAddress(*variable->name);
                     instructions.emplace_back("STORE", address, true);
+                    initializedVariables[procedureCalls.back()][*variable->name] = true;
                 }
             }
-            initializeVariable(*assignNode->identifier->name);
         }
         catch (const CodeGeneratorError &e)
         {
@@ -2206,8 +2251,6 @@ public:
                         instructions.emplace_back("ADD", leftTemp, true);
                     }
 
-                    // instructions.emplace_back("LOAD", leftTemp, true);
-                    // instructions.emplace_back("ADD", rightTemp, true);
                     maxMemoryPointer = std::max(maxMemoryPointer, memoryPointer);
 
                     memoryPointer -= 2;
