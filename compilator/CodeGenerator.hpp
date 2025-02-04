@@ -294,7 +294,7 @@ private:
         if (procedureArguments[procedureName].count(variableName) ||
             procedureArgumentsArrays[procedureName].count(variableName))
         {
-            throw std::runtime_error("Variable name " + variableName + "conflicts with procedure argument: " + variableName);
+            throw std::runtime_error("Variable name " + variableName + " conflicts with procedure argument: " + variableName);
         }
 
         if (procedureVariables[procedureName].count(variableName))

@@ -45,6 +45,8 @@ int main(int argc, char** argv) {
                 std::cout.rdbuf(cout_buf);
                 outFile.close();
 
+                std::cout << "Code generation completed successfully." << std::endl;
+
             } catch (const std::runtime_error& e) {
                 std::cerr << e.what() << std::endl;
                 fclose(yyin);
